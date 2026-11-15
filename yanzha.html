@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>言札</title>
+<style>
+  :root{
+    --bg:#1b1c1f; --panel:#232529; --panel2:#282b30; --line:#33363c;
+    --tx:#e8e6e3; --tx2:#9aa0a6; --tx3:#6e747b;
+    --acc:#d9a441; --acc2:#e8b65a; --ok:#4caf7d; --err:#e0645c; --run:#5b9bd5;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%; overflow:hidden;}
+  body{
+    background:var(--bg); color:var(--tx); overflow:hidden;
+    font:13px/1.6 "Microsoft YaHei UI","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; user-select:none;
+    display:flex; flex-direction:column;
+  }
+  /* ---------- 顶栏 ---------- */
+  header{
+    height:52px; flex:0 0 52px; display:flex; align-items:center; gap:14px; padding:0 18px;
+    background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  .logo{font-size:16px; letter-spacing:3px; font-weight:600; color:var(--tx);}
+  .logo em{font-style:normal; color:var(--acc); margin-left:2px;}
+  .sub{font-size:11.5px; color:var(--tx3); letter-spacing:.5px; padding-top:3px;}
+  .grow{flex:1;}
+  .badge{
+    font-size:11px; color:var(--ok); border:1px solid rgba(76,175,125,.35);
+    background:rgba(76,175,125,.08); padding:3px 10px; border-radius:20px;
+  }
+  .menu-btn{
+    background:transparent; border:1px solid var(--line); color:var(--tx2);
+    padding:6px 12px; border-radius:7px; cursor:pointer; font-size:12.5px;
+    font-family:inherit; transition:.15s;
+  }
+  .menu-btn:hover{color:var(--tx); border-color:#4a4e56;}
+  /* ---------- 主体 ---------- */
+  main{display:flex; flex:1 1 auto; min-height:0;}
+  .left{
+    width:372px; min-width:372px; border-right:1px solid var(--line);
+    display:flex; flex-direction:column; background:var(--panel);
+  }
+  .left-top{padding:14px 16px 10px; display:flex; gap:8px;}
+  .btn{
+    border:none; border-radius:8px; cursor:pointer; font-family:inherit;
+    font-size:13px; padding:9px 14px; transition:.15s; white-space:nowrap;
+  }
+  .btn-main{background:var(--acc); color:#1a1710; font-weight:600; flex:1;}
+  .btn-main:hover{background:var(--acc2);}
+  .btn-main:disabled{background:#4a4232; color:#8a7f6b; cursor:not-allowed;}
+  .btn-ghost{background:transparent; color:var(--tx2); border:1px solid var(--line);}
+  .btn-ghost:hover{color:var(--tx); border-color:#4a4e56;}
+  .btn-ghost:disabled{opacity:.4; cursor:not-allowed;}
+  .list{flex:1; overflow-y:auto; padding:4px 12px 12px; display:flex; flex-direction:column;}
+  .empty{
+    color:var(--tx3); font-size:12.5px; text-align:center; padding:0 24px;
+    line-height:2; margin:auto;
+  }
+  .empty b{color:var(--tx2); font-weight:500;}
+  .item{
+    background:var(--panel2); border:1px solid transparent; border-radius:9px;
+    padding:10px 12px; margin-bottom:8px; cursor:pointer; transition:.15s;
+    position:relative;
+  }
+  .item:hover{border-color:#41454d;}
+  .item.sel{border-color:var(--acc); background:#2c2a24;}
+  .item.done .nm::before{content:""; display:inline-block; width:6px; height:6px;
+    border-radius:50%; background:var(--ok); margin-right:7px; vertical-align:middle;}
+  .item.error .nm::before{content:""; display:inline-block; width:6px; height:6px;
+    border-radius:50%; background:var(--err); margin-right:7px; vertical-align:middle;}
+  .item.run .nm::before{content:""; display:inline-block; width:6px; height:6px;
+    border-radius:50%; background:var(--run); margin-right:7px; vertical-align:middle;
+    animation:pulse 1s infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .nm{font-size:12.8px; color:var(--tx); overflow:hidden; text-overflow:ellipsis;
+      white-space:nowrap; padding-right:22px;}
+  .meta{font-size:11px; color:var(--tx3); margin-top:3px; display:flex; gap:10px;}
+  .meta .err{color:var(--err);}
+  .bar{height:3px; background:#31343a; border-radius:2px; margin-top:8px; overflow:hidden;}
+  .bar i{display:block; height:100%; width:0; background:var(--acc); transition:width .25s;}
+  .item.done .bar i{background:var(--ok);}
+  .item.error .bar i{background:var(--err);}
+  .del{
+    position:absolute; top:8px; right:8px; width:18px; height:18px; line-height:16px;
+    text-align:center; border-radius:5px; color:var(--tx3); font-size:14px;
+    opacity:0; transition:.15s;
+  }
+  .item:hover .del{opacity:1;}
+  .del:hover{background:#3a3d44; color:var(--err);}
+  .left-bottom{padding:12px 16px; border-top:1px solid var(--line);}
+  .chk{
+    display:flex; align-items:center; gap:8px; margin-bottom:10px;
+    font-size:12px; color:var(--tx2); cursor:pointer; user-select:none;
+  }
+  .chk input{
+    appearance:none; width:16px; height:16px; flex:0 0 16px; border-radius:4px;
+    border:1px solid #4a4e56; background:#26282d; cursor:pointer; position:relative;
+  }
+  .chk input:checked{background:var(--acc); border-color:var(--acc);}
+  .chk input:checked::after{
+    content:''; position:absolute; left:5px; top:1.5px; width:4px; height:8px;
+    border:solid #1a1710; border-width:0 2px 2px 0; transform:rotate(42deg);
+  }
+  .chk em{color:var(--tx3); font-style:normal; font-size:11px; margin-left:6px;}
+  .chk.off{opacity:.45; pointer-events:none;}
+  .left-bottom .btn{width:100%;}
+  .hint{font-size:11px; color:var(--tx3); text-align:center; margin-top:8px;}
+  /* ---------- 右栏 ---------- */
+  .right{flex:1; display:flex; flex-direction:column; min-width:0;}
+  .rtop{
+    height:46px; display:flex; align-items:center; gap:10px; padding:0 20px;
+    border-bottom:1px solid var(--line); background:var(--bg);
+  }
+  .rtitle{font-size:12.5px; color:var(--tx2);}
+  .ract{display:flex; gap:8px; margin-left:auto;}
+  .drop{position:relative;}
+  .dd{
+    position:absolute; right:0; top:32px; background:var(--panel2);
+    border:1px solid var(--line); border-radius:9px; padding:5px;
+    min-width:158px; display:none; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,.45);
+  }
+  .dd.on{display:block;}
+  .dd-sep{height:1px; background:var(--line); margin:5px 8px;}
+  .dd button{
+    display:block; width:100%; text-align:left; background:transparent; border:none;
+    color:var(--tx2); padding:8px 12px; border-radius:6px; cursor:pointer;
+    font-size:12.5px; font-family:inherit;
+  }
+  .dd button:hover{background:#32353b; color:var(--tx);}
+  .result{flex:1; overflow-y:auto; padding:8px 20px 40px;}
+  .spkblock{margin-bottom:6px; padding-left:2px; border-left:2px solid #3a3d44; padding-top:2px;}
+  .spkname{
+    font-size:11px; color:var(--acc); font-weight:600; letter-spacing:.4px;
+    padding:6px 0 2px 10px; user-select:none; cursor:pointer;
+  }
+  .spkname:hover{text-decoration:underline;}
+  .spkname .ren{
+    font-weight:400; color:#7d8087; margin-left:6px; font-size:10px;
+    opacity:0; transition:.12s;
+  }
+  .spkname:hover .ren{opacity:1;}
+  .sent{display:flex; gap:14px; padding:7px 10px; border-radius:7px; transition:.12s;}
+  .sent:hover{background:var(--panel);}
+  .sent .t{
+    font-size:11px; color:var(--tx3); font-family:"Cascadia Mono",Consolas,monospace;
+    padding-top:3px; min-width:52px; user-select:text;
+  }
+  .sent .x{font-size:14.5px; line-height:1.95; color:var(--tx); user-select:text;
+           letter-spacing:.2px;}
+  .placeholder{
+    height:100%; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; color:var(--tx3); gap:14px; font-size:12.5px;
+  }
+  .placeholder .big{font-size:15px; color:var(--tx2); letter-spacing:2px;}
+  .placeholder kbd{
+    background:var(--panel2); border:1px solid var(--line); border-radius:5px;
+    padding:2px 7px; font-size:11px; font-family:inherit; color:var(--tx2);
+  }
+  /* ---------- 底栏 ---------- */
+  footer{
+    height:34px; flex:0 0 34px; display:flex; align-items:center; gap:16px; padding:0 18px;
+    background:var(--panel); border-top:1px solid var(--line);
+    font-size:11.5px; color:var(--tx3);
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:6px;}
+  /* 滚动条 */
+  ::-webkit-scrollbar{width:9px;}
+  ::-webkit-scrollbar-thumb{background:#3a3d44; border-radius:5px;}
+  ::-webkit-scrollbar-thumb:hover{background:#4a4e56;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  /* ---------- 弹窗 ---------- */
+  .mask{
+    position:fixed; inset:0; background:rgba(8,9,11,.62); display:none;
+    align-items:center; justify-content:center; z-index:60; backdrop-filter:blur(2px);
+  }
+  .mask.on{display:flex;}
+  .modal{
+    width:620px; max-width:calc(100vw - 80px); max-height:calc(100vh - 100px);
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    display:flex; flex-direction:column; box-shadow:0 24px 60px rgba(0,0,0,.55);
+  }
+  .mhead{
+    display:flex; align-items:center; padding:16px 20px 12px;
+    border-bottom:1px solid var(--line); font-size:14px; font-weight:600;
+  }
+  .mx{
+    margin-left:auto; background:transparent; border:none; color:var(--tx3);
+    font-size:19px; line-height:1; cursor:pointer; padding:2px 6px; border-radius:6px;
+  }
+  .mx:hover{background:#31343a; color:var(--tx);}
+  .mbody{padding:16px 20px 20px; overflow-y:auto; font-size:12.5px; line-height:1.85; color:var(--tx2);}
+  .mbody h4{margin:14px 0 6px; color:var(--tx); font-size:12.5px; font-weight:600;}
+  .mbody h4:first-child{margin-top:0;}
+  .mbody p{margin:0 0 8px;}
+  .mbody ul{margin:0 0 8px; padding-left:18px;}
+  .mbody li{margin-bottom:5px;}
+  .mbody code{background:#2a2d33; padding:1px 5px; border-radius:4px; color:var(--acc); font-size:11.5px;}
+  .mbody .warn{color:#d9a441;}
+  .mbody .thin{color:var(--tx3); font-size:11.5px;}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">言札<em>·</em></div>
+  </div>
+  <div class="sub">录音转文字 · 全程离线</div>
+  <div class="grow"></div>
+  <div class="badge" id="badge">模型就绪</div>
+  <button class="menu-btn" onclick="help()">使用说明</button>
+  <button class="menu-btn" onclick="about()">关于</button>
+</header>
+
+<main>
+  <div class="left">
+    <div class="left-top">
+      <button class="btn btn-main" id="btnAdd" onclick="pick()">添加音视频文件</button>
+      <button class="btn btn-ghost" id="btnClear" onclick="clearAll()">清空</button>
+    </div>
+    <div class="list" id="list">
+      <div class="empty" id="emptyTip">
+        把 <b>录音 / 播客 / 会议 / 视频</b> 拖进来，<br>或点上面的按钮选择<br><br>
+        不上传，不联网，不花钱
+      </div>
+    </div>
+    <div class="left-bottom">
+      <label class="chk" id="spkWrap">
+        <input type="checkbox" id="spk" checked onchange="setSpk(this.checked)">
+        <span>区分说话人<em>多人播客/访谈</em></span>
+      </label>
+      <button class="btn btn-main" id="btnStart" onclick="start()">开始转写</button>
+      <div class="hint" id="hint">本机处理 · 录音不出这台电脑</div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="rtop">
+      <div class="rtitle" id="rtitle">转写结果</div>
+      <div class="ract">
+        <button class="btn btn-ghost" onclick="copyAll()" id="btnCopy" disabled>复制</button>
+        <div class="drop">
+          <button class="btn btn-ghost" onclick="toggleDD(event)" id="btnExp" disabled>导出 ▾</button>
+          <div class="dd" id="dd">
+            <button onclick="doExport('txt')">纯文本 .txt</button>
+            <button onclick="doExport('md')">Markdown .md</button>
+            <button onclick="doExport('docx')">Word .docx</button>
+            <div class="dd-sep"></div>
+            <button onclick="doExport('srt')">字幕 .srt</button>
+            <button onclick="doExport('vtt')">字幕 .vtt</button>
+            <button onclick="doExport('tsv')">带时间戳 .txt</button>
+            <button onclick="doExport('json')">结构化 .json</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="result" id="result">
+      <div class="placeholder">
+        <div class="big">言札</div>
+        <div>把声音变成能直接用的文字稿</div>
+        <div style="margin-top:6px">断网也能用 · <kbd>1 小时录音约 3 分钟</kbd></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span><i class="dot"></i><span id="fstate">就绪</span></span>
+  <span id="finfo"></span>
+  <div class="grow"></div>
+  <span>© 永远的兰兰</span>
+</footer>
+
+<div class="mask" id="mask" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="mhead"><span id="mtitle"></span><button class="mx" onclick="closeModal()">×</button></div>
+    <div class="mbody" id="mbody"></div>
+  </div>
+</div>
+
+<script>
+let state = [], sel = -1, results = {}, busy = false, t0 = 0;
+const APP_VER = '0.1.2';
+
+const $ = id => document.getElementById(id);
+
+function fmtDur(s){
+  s = Math.round(s||0);
+  const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+  return h ? `${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`
+           : `${m}:${String(x).padStart(2,'0')}`;
+}
+function fmtT(s){
+  s = Math.max(0, s||0);
+  const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = Math.floor(s%60);
+  return h ? `${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`
+           : `${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`;
+}
+
+/* ---------- 由 Python 调用 ---------- */
+function renderList(st){
+  state = st || [];
+  const box = $('list');
+  $('emptyTip').style.display = state.length ? 'none' : 'block';
+  box.querySelectorAll('.item').forEach(e=>e.remove());
+  state.forEach(it=>{
+    const d = document.createElement('div');
+    d.className = 'item ' + (it.status==='done'?'done':it.status==='error'?'error':it.status==='run'?'run':'')
+                 + (it.idx===sel?' sel':'');
+    d.onclick = () => select(it.idx);
+    const pct = Math.round((it.progress||0)*100);
+    let meta = [];
+    if (it.status==='done' && it.chars) meta.push(`${it.chars} 字`);
+    if (it.duration) meta.push(fmtDur(it.duration));
+    if (it.status==='run') meta.push(it.msg || (pct+'%'));
+    if (it.status==='error') meta.push(`<span class="err">${it.error||'失败'}</span>`);
+    if (it.status==='wait') meta.push('待转写');
+    d.innerHTML = `<div class="nm" title="${esc(it.name)}">${esc(it.name)}</div>
+      <div class="meta">${meta.join('<span style="color:#4a4e56">·</span>')}</div>
+      <div class="bar"><i style="width:${it.status==='done'?100:pct}%"></i></div>
+      <div class="del" onclick="event.stopPropagation();del(${it.idx})">×</div>`;
+    box.appendChild(d);
+  });
+  if (!busy) $('fstate').textContent = state.length ? `${state.length} 个文件` : '就绪';
+}
+function onItemProgress(idx, p, msg){
+  const it = state.find(x=>x.idx===idx);
+  if (it){ it.progress = p; it.msg = msg; it.status='run'; renderList(state); }
+  $('fstate').textContent = msg || '转写中';
+}
+function showResult(idx){
+  select(idx);
+  $('fstate').textContent = '完成';
+}
+function onAllDone(sec){
+  busy = false;
+  $('btnStart').textContent = '开始转写';
+  $('btnStart').disabled = false;
+  $('btnAdd').disabled = false;
+  $('btnClear').disabled = false;
+  $('fstate').textContent = '全部完成 · 用时 ' + sec + ' 秒';
+  renderList(state);
+}
+
+/* ---------- 交互 ---------- */
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function pick(){
+  await pywebview.api.pick_files();
+}
+function del(i){ pywebview.api.remove(i); }
+async function setSpk(on){
+  const r = await pywebview.api.set_speaker(on);
+  if (!r.on && on) { $('spk').checked = false; }
+  $('fstate').textContent = r.on ? '会区分说话人（多跑一遍分离，稍慢）' : '不区分说话人';
+}
+function clearAll(){
+  sel = -1; results = {};
+  $('result').innerHTML = `<div class="placeholder"><div class="big">言札</div>
+    <div>把声音变成能直接用的文字稿</div></div>`;
+  pywebview.api.clear();
+  $('btnExp').disabled = true; $('btnCopy').disabled = true;
+}
+async function start(){
+  if (busy) { await pywebview.api.stop(); busy=false; $('btnStart').textContent='开始转写'; return; }
+  const r = await pywebview.api.start();
+  if (!r.ok) { $('fstate').textContent = r.msg || '无法开始'; return; }
+  busy = true;
+  $('btnStart').textContent = '停止';
+  $('btnAdd').disabled = true;
+  $('btnClear').disabled = true;
+  $('fstate').textContent = '开始…';
+}
+async function select(i){
+  sel = i;
+  renderList(state);
+  const r = await pywebview.api.result(i);
+  results[i] = r;
+  $('rtitle').textContent = r.name
+    ? `${r.name} · ${r.sentences.length} 句` + (r.speakers > 1 ? ` · ${r.speakers} 人` : '')
+    : '转写结果';
+  const box = $('result');
+  if (!r.sentences || !r.sentences.length){
+    box.innerHTML = `<div class="placeholder">这个文件还没有内容</div>`;
+    $('btnExp').disabled = true; $('btnCopy').disabled = true;
+    return;
+  }
+  let html = '', cur = undefined, open = false;
+  r.sentences.forEach(s => {
+    const spk = s.speaker || '';
+    if (spk !== cur){
+      if (open) html += '</div>';
+      if (spk) html += `<div class="spkblock"><div class="spkname" data-spk="${esc(spk)}" title="点一下可以改成「主持人」「嘉宾」">${/^\d+$/.test(spk) ? '说话人 ' + spk : esc(spk)}<span class="ren">改名</span></div>`;
+      open = !!spk;
+      cur = spk;
+    }
+    html += `<div class="sent"><div class="t">${fmtT(s.start)}</div><div class="x">${esc(s.text)}</div></div>`;
+  });
+  if (open) html += '</div>';
+  box.innerHTML = html;
+  box.scrollTop = 0;
+  $('btnExp').disabled = false; $('btnCopy').disabled = false;
+}
+/* ---- 说话人改名：点「说话人 1」就能换成「主持人」「嘉宾」 ---- */
+$('result').addEventListener('click', e=>{
+  const el = e.target.closest('.spkname');
+  if (el) renameSpk(el.dataset.spk);
+});
+let renamingOld = '';
+function renameSpk(old){
+  renamingOld = old;
+  const label = /^\d+$/.test(old) ? '说话人 ' + old : old;
+  openModal('重命名说话人', `
+    <p>把「${esc(label)}」换成你习惯的称呼，导出 txt / md / Word / 字幕时都会用新名字。</p>
+    <p style="margin:14px 0 4px">
+      <input id="spkin" value="${esc(label)}" maxlength="24"
+        style="width:100%;box-sizing:border-box;background:#26282d;border:1px solid #3a3d44;
+               color:#e6e8ea;padding:9px 11px;border-radius:7px;font-size:13px;outline:none">
+    </p>
+    <p class="thin">留空或取消就不改。名字只存在本次结果里，不动原文件。</p>
+    <p style="text-align:right;margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-main" style="flex:0 0 auto;margin-left:8px;padding:0 18px" onclick="doRename()">确定</button>
+    </p>`);
+  setTimeout(()=>{ const i = $('spkin'); if (i) { i.focus(); i.select(); } }, 60);
+}
+async function doRename(){
+  const el = $('spkin');
+  const v = ((el && el.value) || '').trim();
+  const old = renamingOld;
+  closeModal();
+  if (!v || v === old || sel < 0) return;
+  const r = await pywebview.api.rename_speaker(sel, old, v);
+  if (r && r.ok) { $('fstate').textContent = `已改名，${r.n} 句`; await select(sel); }
+}
+function toggleDD(e){
+  e.stopPropagation();
+  $('dd').classList.toggle('on');
+}document.addEventListener('click', ()=> $('dd').classList.remove('on'));
+async function doExport(k){
+  $('dd').classList.remove('on');
+  if (sel < 0) return;
+  const r = await pywebview.api.export(sel, k);
+  $('fstate').textContent = r.msg || '';
+}
+async function copyAll(){
+  if (sel < 0) return;
+  await pywebview.api.copy_text(sel);
+  $('fstate').textContent = '已复制全文';
+}
+function openModal(title, html){
+  $('mtitle').textContent = title;
+  $('mbody').innerHTML = html;
+  $('mask').classList.add('on');
+  $('mbody').scrollTop = 0;
+}
+function closeModal(){ $('mask').classList.remove('on'); }
+document.addEventListener('keydown', e=>{ if (e.key === 'Escape') closeModal(); });
+
+function help(){ openModal('使用说明', HELP_HTML); }
+function about(){ openModal('关于言札', ABOUT_HTML); }
+
+const HELP_HTML = `
+<h4>三步用完</h4>
+<ul>
+  <li>点「添加音视频文件」，或把文件拖进窗口</li>
+  <li>点「开始转写」，等进度走完</li>
+  <li>右侧看稿，点「导出」选格式</li>
+</ul>
+<h4>区分了说话人之后</h4>
+<ul>
+  <li>稿子里每个人前面会有「说话人 1 / 2」的小标题</li>
+  <li><b>点那个小标题就能改名</b>，换成「主持人」「嘉宾」这类真实称呼，导出时一并带上</li>
+</ul>
+<h4>支持什么</h4>
+<p>音频 <code>mp3 m4a wav flac aac ogg opus wma</code>；视频 <code>mp4 mkv mov avi flv webm ts m4v</code>。视频只取音轨，画面不用管。</p>
+<p>语种<b>中文、English、日本語、한국어、粤语</b>，不用选，模型自己判断；一段话里中英混说也认。</p>
+<h4>导出格式</h4>
+<ul>
+  <li><b>.txt</b> 干净稿，按段落分好，直接贴</li>
+  <li><b>.md</b> 带标题的 Markdown</li>
+  <li><b>.docx</b> Word 文档，可以直接改</li>
+  <li><b>.srt / .vtt</b> 字幕，剪映、Premiere、B站都能吃</li>
+  <li><b>.json</b> 带时间轴的结构化数据</li>
+  <li><b>.txt（带时间戳）</b> 每行前面标时间</li>
+</ul>
+<h4>要注意</h4>
+<ul>
+  <li>速度大约 <b>1 小时音频 3 分钟</b>，取决于机器</li>
+  <li>转写结果是机器听出来的，<span class="warn">人名、数字、专业词容易错</span>，重要内容请人工核对</li>
+  <li>导出的 txt / md / Word 末尾都会自动带一句同样的提醒，转发给别人时也说得清</li>
+  <li>全程在本机跑，不联网；断网、拔网线都不影响</li>
+  <li>日志在 <code>%LOCALAPPDATA%\\YanZha\\yanzha.log</code>，出问题可以发给作者</li>
+</ul>`;
+
+const ABOUT_HTML = `
+<p><b>言札 v${APP_VER}</b>　录音／视频 → 文字稿，全程在本机完成。</p>
+<p class="thin">不上传 · 不要账号 · 不限时长 · 不联网</p>
+
+<h4>免责声明</h4>
+<ul>
+  <li>本软件是<b>本地转写工具</b>，只处理你自己提供的音视频文件，<b>不提供</b>任何音视频、文字内容的获取、下载、搜索或传播服务。</li>
+  <li>你应当确保对所处理的音视频<b>享有合法权利</b>，或已取得权利人许可。因内容来源产生的任何纠纷，由使用者自行承担。</li>
+  <li>转写结果由机器自动生成，<b>可能存在错误</b>，不构成任何形式的证据或凭据。涉及法律、医疗、财务、人事等重大事项时，请以人工核对为准。</li>
+  <li>软件按「现状」提供，作者不对使用后果承担任何责任。</li>
+  <li>程序不联网、不上传、不写注册表、不收集任何使用数据。</li>
+</ul>
+
+<h4>开源许可</h4>
+<p>本项目以 <b>MIT License</b> 发布，可自由使用、修改、分发，保留版权声明即可。</p>
+
+<h4>用到的引擎</h4>
+<ul>
+  <li>识别：sherpa-onnx · SenseVoice Small（中英日韩粤，自带标点与逐字时间戳，离线）</li>
+  <li>语音检测：silero-vad</li>
+  <li>说话人：campplus 声纹 + 句级聚类</li>
+  <li>解码：FFmpeg（LGPL/GPL，仅调用其可执行文件）</li>
+</ul>
+
+<h4>关于作者</h4>
+<p>© 永远的兰兰 · Lanlan Eternal</p>
+<p>开源仓库：<span class="thin">github.com/podcatcher962/YanZha</span><br>
+问题反馈、版本更新都在这里；也可以在上面的页面直接提 Issue。</p>`;
+
+/* 拖放：拿得到路径就加，拿不到就提示用按钮（浏览器内核限制） */
+document.addEventListener('dragover', e=>{ e.preventDefault(); });
+document.addEventListener('drop', async e=>{
+  e.preventDefault();
+  const fs = [...(e.dataTransfer.files||[])];
+  const paths = fs.map(f=>f.path).filter(Boolean);
+  if (paths.length) { await pywebview.api.add_paths(paths); }
+  else if (fs.length) { $('fstate').textContent = '请用「添加音视频文件」按钮选择（拖放受内核限制）'; }
+});
+
+let booted = false, booting = false;
+async function boot(){
+  if (booted || booting) return;
+  if (!window.pywebview || !window.pywebview.api) return;
+  if (typeof pywebview.api.app_info !== 'function'){
+    // api 对象已经在，但方法还没挂上（Edge 上偶尔晚一拍），等下一轮
+    return;
+  }
+  booting = true;
+  try {
+    const info = await pywebview.api.app_info();
+    $('badge').textContent = info.models_ok ? '模型就绪' : ('缺模型：' + info.models_missing);
+    $('badge').style.color = info.models_ok ? 'var(--ok)' : 'var(--err)';
+    if (!info.has_speaker){
+      $('spkWrap').classList.add('off');
+      $('spk').checked = false;
+    } else {
+      $('spk').checked = info.speaker_on !== false;
+    }
+    renderList([]);
+    if (info.first) openModal('关于言札', ABOUT_HTML);
+    booted = true;
+  } finally {
+    booting = false;
+  }
+}
+
+/* 有的环境里 pywebviewready 不触发，或者触发了但 api 方法还没挂上，
+   这里轮询兜底，两条路谁先到算谁 */
+window.addEventListener('pywebviewready', ()=>{ boot().catch(()=>{}); });
+let bootTries = 0;
+const bootTimer = setInterval(()=>{
+  if (booted || bootTries++ > 200){
+    clearInterval(bootTimer);
+    if (!booted){
+      const keys = (window.pywebview && window.pywebview.api)
+        ? Object.keys(window.pywebview.api).join(',') : '无 api 对象';
+      $('fstate').textContent = '初始化失败（api 未就绪：' + keys + '）';
+    }
+    return;
+  }
+  boot().catch(e => { $('fstate').textContent = '初始化失败：' + e; });
+}, 120);
+</script>
+</body>
+</html>
