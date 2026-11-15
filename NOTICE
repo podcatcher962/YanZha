@@ -1,0 +1,49 @@
+言札 YanZha
+Copyright (c) 2026 永远的兰兰 (Lanlan Eternal)
+https://github.com/podcatcher962/YanZha
+
+────────────────────────────────────────────────────────
+署名保留声明 · Attribution Must Be Preserved
+────────────────────────────────────────────────────────
+
+本作品以 MIT License 发布。按 MIT 许可的明文要求，任何使用、复制、
+修改、合并、发布、分发、再许可或销售本软件及其副本的行为，都必须：
+
+  1. 保留本文件与 LICENSE 中的版权声明；
+  2. 保留「永远的兰兰 / Lanlan Eternal」的作者署名；
+  3. 不得声称原作品由自己创作。
+
+换言之：
+  · 你可以自由使用、修改、再发布，包括商业使用；
+  · 但你不能在再发布时抹掉或替换掉原作者的署名；
+  · 你修改后的版本可以署上你自己的名字，但必须同时保留
+    原作者的版权声明 —— 这是 MIT 许可的强制条件，不是请求；
+  · 若要 fork 或二次开发，请在 README 或「关于」页保留一行：
+    「基于 言札 YanZha © 永远的兰兰 (Lanlan Eternal)」。
+
+This work is released under the MIT License. As required by the MIT
+License, any use, copy, modification, merge, publication, distribution,
+sublicense, or sale of this software and its copies MUST:
+
+  1. retain the copyright notice in this file and in LICENSE;
+  2. retain the author attribution "永远的兰兰 / Lanlan Eternal";
+  3. not claim that the original work was created by you.
+
+In short: you may use, modify, redistribute and sell it freely, but you
+may not remove or replace the original author's attribution. Derivative
+works may carry your own name, but must also keep the original copyright
+notice. This is a condition of the MIT License, not a request.
+
+If you fork or build upon it, please keep one line in your README or
+About page:
+  "Based on YanZha © 永远的兰兰 (Lanlan Eternal)"
+
+────────────────────────────────────────────────────────
+第三方组件 · Third-Party Components
+────────────────────────────────────────────────────────
+
+本软件内含第三方组件与模型，各有自己的许可与署名要求，详见
+THIRD-PARTY-NOTICES.md 与 licenses/ 目录。其中语音识别模型
+SenseVoice Small 使用 FunASR Model License v1.1，该许可第 2.2 条
+要求注明出处、作者信息并保留模型名称 —— 本项目已在上文、README、
+程序「关于」页与 licenses/FunASR-MODEL-LICENSE.txt 中一并保留。

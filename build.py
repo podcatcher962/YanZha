@@ -82,12 +82,38 @@ def main():
         shutil.copy2(ff, os.path.join(dist, 'ffmpeg.exe'))
         print('  + ffmpeg.exe (%.0f MB)' % (os.path.getsize(ff) / 1048576))
 
-    # 5. 说明
-    for doc in ('README-使用说明.md', 'LICENSE'):
+    # 5. 说明与许可（许可文件必须随包，模型许可第 2.2 条要求）
+    for doc in ('README-使用说明.md', 'LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.md'):
         p = os.path.join(HERE, doc)
         if os.path.exists(p):
             shutil.copy2(p, os.path.join(dist, doc))
             print('  + %s' % doc)
+
+    lic_src = os.path.join(HERE, 'licenses')
+    if os.path.isdir(lic_src):
+        lic_dst = os.path.join(dist, 'licenses')
+        os.makedirs(lic_dst, exist_ok=True)
+        for f in sorted(os.listdir(lic_src)):
+            sp = os.path.join(lic_src, f)
+            if os.path.isfile(sp):
+                shutil.copy2(sp, os.path.join(lic_dst, f))
+                print('  + licenses/%s' % f)
+
+    # 5.1 模型名称必须保留（FunASR 许可 2.2 条）：在模型目录留下名字，别被当成脏文件删掉
+    tag = os.path.join(dist, 'models', 'asr', 'MODEL-NAME.txt')
+    if os.path.isdir(os.path.join(dist, 'models', 'asr')):
+        with open(tag, 'w', encoding='utf-8') as fp:
+            fp.write(
+                'SenseVoice Small\n'
+                'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\n'
+                '\n'
+                '作者 / Author: FunAudioLLM / SenseVoice, Alibaba Group\n'
+                '许可 / License: FunASR Model Open Source License Agreement v1.1\n'
+                '全文 / Full text: ../licenses/FunASR-MODEL-LICENSE.txt\n'
+                '\n'
+                '本文件是许可要求保留的模型名称标识，请勿删除。\n'
+                'Required by FunASR Model License v1.1 §2.2 — do not remove.\n')
+            print('  + models/asr/MODEL-NAME.txt')
 
     # 6. 报体积
     total = 0

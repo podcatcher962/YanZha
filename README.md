@@ -1,5 +1,7 @@
 # 言札 · YanZha
 
+**v0.2.0** · 2026-11-15
+
 把录音、播客、会议、视频，变成能直接用的文字稿。
 
 **不上传、不联网、不要账号、不限时长、不花钱。**
@@ -9,6 +11,12 @@ Windows 10/11 64 位 · 单文件程序 + 本地模型 · MIT 开源
 > 仓库地址：**https://github.com/podcatcher962/YanZha**
 > 作者：**永远的兰兰（Lanlan Eternal）**
 > 下载：**[Releases](https://github.com/podcatcher962/YanZha/releases)**
+
+*Turn recordings, podcasts, meetings and videos into usable transcripts.
+Fully offline — nothing uploaded, no account, no time limit, free.
+Five languages auto-detected (Chinese / English / Japanese / Korean /
+Cantonese), speaker diarization, 7 export formats. Windows x64, MIT.*
+*— [English section below ↓](#english)*
 
 ---
 
@@ -169,13 +177,149 @@ python build.py
 
 ---
 
-## 授权
+## 授权与署名（重要）
 
-本项目以 **MIT License** 发布，可自由使用、修改、分发，保留版权声明即可。全文见 [LICENSE](LICENSE)。
-第三方组件许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+本项目以 **MIT License** 发布，可自由使用、修改、分发、商业使用。全文见 [LICENSE](LICENSE)。
+
+**但署名必须一直保留。** 按 MIT 许可的强制要求，任何使用、复制、修改、合并、发布、
+分发、再许可或销售本软件及其副本的行为，都必须：
+
+1. 保留 `LICENSE` 与 [`NOTICE`](NOTICE) 中的版权声明；
+2. 保留作者署名 **永远的兰兰 / Lanlan Eternal**；
+3. **不得**声称原作品由自己创作。
+
+修改后的版本可以署你自己的名字，但**必须同时保留原作者的版权声明**——
+这是许可条件，不是请求。fork 或二次开发请在 README 或「关于」页保留一行：
+
+```
+基于 言札 YanZha © 永远的兰兰 (Lanlan Eternal)
+https://github.com/podcatcher962/YanZha
+```
+
+### 第三方组件与模型
+
+代码是 MIT，但**模型和 FFmpeg 各有自己的许可**，随包分发须遵守：
+
+| 组件 | 许可 | 要点 |
+|---|---|---|
+| SenseVoice Small（识别模型） | **FunASR Model License v1.1** © Alibaba | 必须注明出处与作者、**保留模型名称** |
+| silero-vad（语音检测） | MIT | 保留声明 |
+| CAM++ / 3D-Speaker（声纹） | Apache-2.0 | 保留声明 |
+| sherpa-onnx / pywebview / python-docx | Apache-2.0 / BSD-3 / MIT | 保留声明 |
+| FFmpeg（解码） | LGPL / GPL | 仅调用其可执行文件，按 GPL 分发 |
+
+识别模型是**开源可商用**的（FunASR 自有许可，非 OSI 标准但允许使用、修改、分发），
+条件就是署名与保留模型名——本项目已在上文、[`NOTICE`](NOTICE)、
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)、
+[`licenses/FunASR-MODEL-LICENSE.txt`](licenses/FunASR-MODEL-LICENSE.txt)
+以及程序「关于」页五处一并保留。逐条对照见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+
+---
+
+<a id="english"></a>
+## English
+
+### What it is
+
+A fully offline audio/video-to-text tool for Windows. Audio never leaves the
+machine — there is no networking code in the program at all. No account,
+no time limit, no cost.
+
+About **3 minutes per hour** of audio on an ordinary laptop, CPU only,
+no GPU required.
+
+### Features
+
+| | |
+|---|---|
+| **5 languages** | Chinese, English, Japanese, Korean, Cantonese — auto-detected, no manual switch; mixed zh/en in one file works |
+| **Speaker diarization** | Splits multi-speaker podcasts/interviews by person, labelled "Speaker 1 / 2 / 3"; automatically removed for single-speaker files |
+| **Rename speakers** | Click "Speaker 1" → rename to "Host" / "Guest"; applies to every export format |
+| **7 export formats** | txt / md / Word / srt / vtt / timestamped txt / structured json |
+| **Audio + video input** | mp3 m4a wav flac aac ogg opus wma; mp4 mkv mov avi flv webm ts m4v |
+| **Punctuation & paragraphs** | Built into the model — real sentences, not one unreadable wall of text |
+| **Word-level timestamps** | Subtitles precise enough for Premiere / Final Cut / Bilibili |
+| **Resumable** | Live progress, stop anytime; toggling diarization does not re-run recognition |
+
+### Quick start
+
+1. Run `YanZha.exe` (keep `models/` and `ffmpeg.exe` beside it)
+2. "添加音视频文件" (Add files) — or drag files into the window
+3. "开始转写" (Start) — wait for the progress bar
+4. Click a file on the left, the transcript appears on the right; export as needed
+
+### Performance (measured, not estimated)
+
+| | |
+|---|---|
+| Real-time factor | **0.026 – 0.047** (53.6 s audio → 2.96 s transcript) |
+| One hour of audio | ≈ 2.8 – 3.3 minutes |
+| Diarization overhead | ≈ 32 ms per sentence (84 s two-speaker clip → 3 s) |
+| Model load | 1.4 s |
+| Cold start | 2 – 3 s |
+
+### Privacy
+
+- Audio is processed **locally only** — nothing is uploaded
+- No telemetry, no analytics, no update check, no network code
+- No service installed, no registry writes, no system settings changed
+- Works with the network cable unplugged
+
+### Requirements
+
+- Windows 10 / 11 (64-bit)
+- 4 GB RAM (8 GB recommended for long recordings)
+- ~400 MB disk (program 42 MB + models 256 MB + decoder 79 MB)
+
+### Build from source
+
+```bash
+pip install sherpa-onnx pywebview python-docx pyinstaller
+python build.py
+```
+
+Models are not in the repo (size). Download from
+[sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models):
+
+| Path | Files |
+|---|---|
+| `models/asr/` | `model.int8.onnx` + `tokens.txt` from `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17` |
+| `models/vad/` | `silero_vad.onnx` |
+| `models/speaker/` | `campplus.onnx` |
+
+### License & attribution
+
+Released under the **MIT License** — free to use, modify and redistribute,
+including commercially. **Attribution must be preserved** (MIT requires it):
+keep the copyright notice and the author credit
+**永远的兰兰 / Lanlan Eternal**, and do not claim the original work as yours.
+Derivative works may carry your own name but must also retain the original
+notice. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+The bundled **SenseVoice Small** recognition model is distributed under the
+**FunASR Model License v1.1** (© Alibaba Group), which permits use,
+modification and redistribution on condition that the source, author
+information and **model name** are retained. See
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) for the clause-by-clause
+compliance table and [`licenses/`](licenses/) for the full text.
+
+### Disclaimer
+
+1. This is a **local transcription tool**. It processes only the audio/video
+   files you provide. It does **not** provide any service for obtaining,
+   downloading, searching or distributing audio, video or text content.
+2. You must own the rights to the media you process, or have the rightsholder's
+   permission. Any dispute arising from the content's origin is the user's
+   responsibility.
+3. Transcripts are machine-generated and **may contain errors**. They are not
+   evidence of any kind. For legal, medical, financial or HR matters, verify
+   manually.
+4. Provided "as is", without warranty of any kind.
+5. The program makes no network requests and collects no usage data.
 
 ---
 
 **© 永远的兰兰 · Lanlan Eternal**
 
-仓库：https://github.com/podcatcher962/YanZha
+仓库 / Repository：https://github.com/podcatcher962/YanZha
+版本 / Version：v0.2.0 · 2026-11-15

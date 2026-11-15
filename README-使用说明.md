@@ -132,17 +132,29 @@ v0.2.0 换成 SenseVoice 之后，一个模型顶掉原来「识别 + 标点」�
 
 ---
 
-## 授权
+## 授权与署名
 
-本项目以 **MIT License** 发布，可自由使用、修改、分发，保留版权声明即可。全文见同目录 `LICENSE`。
+本项目以 **MIT License** 发布，可自由使用、修改、分发，也能商用。全文见同目录 `LICENSE`。
 
-用到的引擎：
+**署名必须一直保留。** 按 MIT 许可的强制要求，再发布（包括修改后发布、打包进别的产品）
+必须保留版权声明与作者署名「永远的兰兰 / Lanlan Eternal」，也不得声称原作品是自己写的。
+详见同目录 `NOTICE`。
 
-- 识别：sherpa-onnx · SenseVoice Small（中英日韩粤；自带标点，离线）
-- 语音检测：silero-vad
-- 说话人：3D-Speaker CAM++ 声纹 + 余弦聚类（本程序自行实现）
-- 音频解码：FFmpeg（LGPL/GPL，仅调用其可执行文件）
+用到的引擎与模型：
 
-© 永远的兰兰 · Lanlan Eternal
+| 组件 | 许可 | 说明 |
+|---|---|---|
+| 识别：sherpa-onnx · **SenseVoice Small**（中英日韩粤，自带标点，离线） | **FunASR Model License v1.1** | © Alibaba Group；要求注明出处并**保留模型名称**，全文在 `licenses/` |
+| 语音检测：silero-vad | MIT | 保留声明 |
+| 说话人：3D-Speaker CAM++ 声纹 + 句级余弦聚类（本程序自行实现） | Apache-2.0 | 保留声明 |
+| 音频解码：FFmpeg | LGPL / GPL | 仅调用其可执行文件 |
+
+以上模型均**开源可商用**，各自许可见 `THIRD-PARTY-NOTICES.md` 与 `licenses/` 目录。
+`models/asr/MODEL-NAME.txt` 是许可要求保留的模型名称标识，请不要删。
+
+---
+
+**© 永远的兰兰 · Lanlan Eternal**
 
 开源仓库：https://github.com/podcatcher962/YanZha
+版本：v0.2.0

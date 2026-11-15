@@ -40,13 +40,33 @@
 
 模型许可归各自的上游作者所有。若你将模型用于商业用途，请先阅读上游许可条款。
 
-### SenseVoice Small（语音识别）
+### SenseVoice Small（语音识别模型）
 - 文件：`models/asr/model.int8.onnx`、`models/asr/tokens.txt`
-- 上游：FunAudioLLM / SenseVoice — https://github.com/FunAudioLLM/SenseVoice
-- 分发格式：sherpa-onnx 转换版
+- 模型名称（**必须保留**）：**SenseVoice Small** / `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`
+- 上游作者：**FunAudioLLM / SenseVoice**（阿里巴巴集团通义实验室）
+  - https://github.com/FunAudioLLM/SenseVoice
+  - https://www.modelscope.cn/models/iic/SenseVoiceSmall
+- 本包内分发格式：sherpa-onnx 转换版
   https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
-  （`sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`）
-- 许可：见上游仓库 LICENSE
+- **许可：FunASR Model Open Source License Agreement v1.1**
+  （版权所有 © 2023-2028 Alibaba Group，全文见
+  [`licenses/FunASR-MODEL-LICENSE.txt`](licenses/FunASR-MODEL-LICENSE.txt) 与
+  https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE ）
+
+**该许可对本项目的约束与我们如何遵守：**
+
+| 许可条款 | 内容 | 本项目做法 |
+|---|---|---|
+| 2.1 许可 | 可自由使用、复制、修改、分享 | 随包分发模型，仅本地推理 |
+| **2.2 限制** | **必须注明出处与作者信息，并保留模型名称** | 模型原名 `SenseVoice Small` 原样保留在 `models/asr/` 目录名、README、程序「关于」页、本文件与 `NOTICE` 中；出处与作者如上所列；许可全文随包提供 |
+| 3 责任 | 模型仅作参考学习之用，阿里不承担任何责任 | 已在「免责声明」中声明转写结果可能有错，需人工核对 |
+| 4.2 社区 | 不得无理贬损 | 本项目仅客观陈述许可与来源，无任何贬损表述 |
+| 5 终止 | 违反条款即自动终止许可 | 如上条款均已遵守 |
+
+> 说明：这是**模型权重**的许可，不是 OSI 标准许可，但与 MIT 兼容（MIT 允许聚合与分发第三方组件）。
+> 言札自身的代码仍为 MIT；模型部分按其上游许可分发。若你将本软件用于商业用途，
+> 请自行再核对一次上游许可的最新版本。
+
 
 ### silero-vad（语音活动检测）
 - 文件：`models/vad/silero_vad.onnx`
@@ -55,8 +75,9 @@
 
 ### 3D-Speaker CAM++（说话人声纹）
 - 文件：`models/speaker/campplus.onnx`
-- 来源：https://github.com/modelscope/3D-Speaker
-- 许可：**Apache-2.0**
+- 上游：https://github.com/modelscope/3D-Speaker
+- 分发格式：sherpa-onnx 转换版（speaker-recognition-models release）
+- 许可：**Apache-2.0**（版权归 modelscope / 3D-Speaker 作者）
 
 ---
 

@@ -509,15 +509,19 @@ const ABOUT_HTML = `
 </ul>
 
 <h4>开源许可</h4>
-<p>本项目以 <b>MIT License</b> 发布，可自由使用、修改、分发，保留版权声明即可。</p>
+<p>本项目以 <b>MIT License</b> 发布，可自由使用、修改、分发，也能商用。</p>
+<p><b>署名必须一直保留</b>：按 MIT 许可的强制要求，再发布（含修改后发布、打包进别的产品）
+必须保留版权声明与作者署名「永远的兰兰 / Lanlan Eternal」，也不得声称原作品是自己写的。</p>
 
-<h4>用到的引擎</h4>
+<h4>用到的引擎与模型</h4>
 <ul>
-  <li>识别：sherpa-onnx · SenseVoice Small（中英日韩粤，自带标点与逐字时间戳，离线）</li>
-  <li>语音检测：silero-vad</li>
-  <li>说话人：campplus 声纹 + 句级聚类</li>
+  <li>识别：sherpa-onnx · <b>SenseVoice Small</b>（中英日韩粤，自带标点与逐字时间戳，离线）
+    —— © Alibaba Group，FunASR Model License v1.1，要求注明出处并保留模型名称</li>
+  <li>语音检测：silero-vad（MIT）</li>
+  <li>说话人：3D-Speaker CAM++ 声纹 + 句级聚类（Apache-2.0）</li>
   <li>解码：FFmpeg（LGPL/GPL，仅调用其可执行文件）</li>
 </ul>
+<p class="thin">各组件的许可全文见安装目录下 licenses/ 与 THIRD-PARTY-NOTICES.md。</p>
 
 <h4>关于作者</h4>
 <p>© 永远的兰兰 · Lanlan Eternal</p>
