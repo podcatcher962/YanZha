@@ -48,7 +48,7 @@ def _init_log():
 
 
 APP_TITLE = '言札'
-VERSION = '0.2.0'
+VERSION = '0.3.0'
 
 
 _init_log()
@@ -115,6 +115,8 @@ class Api:
         self._worker = None
         self._running = False
         self._speaker_on = self._engine.has_speaker_model()
+        self._clips = {}          # (path,start,dur) → data URI，重复听同一句不再调 ffmpeg
+        self._undo = []           # 改字/删句的撤销栈
         log.info('说话人模型：%s', '有' if self._speaker_on else '无')
 
     # ---------------- 窗口
@@ -348,6 +350,124 @@ class Api:
                 n += 1
         log.info('改说话人名 %s → %s，%d 句', old, new, n)
         return {'ok': True, 'n': n}
+
+    # ---------------- 校对：听原音 · 改错字
+    @_logged
+    def clip(self, idx, si, ahead=1):
+        """切出「这一句 + 后面 ahead 句」给界面播放，校对时边听边改。"""
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有内容'}
+        it = self._items[idx]
+        sents = it['sentences']
+        if not (0 <= si < len(sents)):
+            return {'ok': False, 'msg': '没有这一句'}
+        s = sents[si]
+        end = s.end
+        for k in range(1, max(0, int(ahead)) + 1):
+            if si + k < len(sents):
+                end = sents[si + k].end
+        start = max(0.0, s.start - 0.25)      # 往前留一点，听得到衔接
+        dur = max(1.2, min(end - start + 0.5, 40.0))
+        key = (it['path'], round(start, 2), round(dur, 2))
+        hit = self._clips.get(key)
+        if hit:
+            return {'ok': True, 'url': hit, 'start': s.start, 'dur': dur, 'cached': True}
+        t0 = time.time()
+        try:
+            url = C.make_clip_b64(it['path'], start, dur)
+        except Exception as e:
+            log.exception('切片失败')
+            return {'ok': False, 'msg': '切不出这段音频：%s' % e}
+        if len(self._clips) >= 8:             # 只留最近几段，别把内存吃满
+            for k in list(self._clips)[:len(self._clips) - 7]:
+                self._clips.pop(k, None)
+        self._clips[key] = url
+        log.info('切片 @%.2fs 长 %.2fs → %d KB，用时 %.0f ms',
+                 s.start, dur, len(url) // 1365, (time.time() - t0) * 1000)
+        return {'ok': True, 'url': url, 'start': s.start, 'dur': dur}
+
+    @staticmethod
+    def _raw_index(it, s):
+        """这句在 raw（识别原始结果）里是第几行，找不到给 -1。"""
+        for j, row in enumerate(it.get('raw') or []):
+            if abs(row[0] - s.start) < 0.05 and abs(row[1] - s.end) < 0.05:
+                return j
+        return -1
+
+    @_logged
+    def set_text(self, idx, si, text):
+        """就地改一句的字。改完 txt / srt / Word 全都跟着变。"""
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有内容'}
+        it = self._items[idx]
+        sents = it['sentences']
+        if not (0 <= si < len(sents)):
+            return {'ok': False, 'msg': '没有这一句'}
+        s = sents[si]
+        new = ' '.join(str(text or '').split())
+        old = s.text
+        if new == old:
+            return {'ok': True, 'changed': False, 'text': old}
+
+        ri = self._raw_index(it, s)
+        rows = it.get('raw') or []
+        # 存副本：Sentence 是可变的，存引用的话改完原文就跟着没了
+        self._undo.append({
+            'idx': idx, 'si': si, 'deleted': not new,
+            'sent': C.Sentence(s.start, s.end, s.text, s.speaker),
+            'raw_i': ri,
+            'raw_row': rows[ri] if 0 <= ri < len(rows) else None,
+        })
+        if len(self._undo) > 300:
+            self._undo.pop(0)
+
+        if not new:
+            # 清空 = 这一句不要了（多半是识别出的噪声/语气词）
+            sents.pop(si)
+            if 0 <= ri < len(rows):
+                rows.pop(ri)
+            log.info('删句 [%d:%d] %r', idx, si, old[:30])
+        else:
+            s.text = new
+            # 同步回 raw：回头重跑「区分说话人」时，改过的字也得留着
+            if 0 <= ri < len(rows):
+                rows[ri] = (rows[ri][0], rows[ri][1], new)
+            log.info('改字 [%d:%d] %r → %r', idx, si, old[:30], new[:30])
+        return {'ok': True, 'changed': True, 'text': new,
+                'left': len(sents),
+                'chars': sum(len(x.text) for x in sents)}
+
+    @_logged
+    def undo_text(self, idx=None):
+        """撤销上一次改字/删句。"""
+        while self._undo:
+            u = self._undo.pop()
+            if idx is not None and u['idx'] != idx:
+                self._undo.append(u)
+                return {'ok': False, 'msg': '这条不属于当前文件'}
+            if u['idx'] >= len(self._items):
+                continue
+            it = self._items[u['idx']]
+            sents = it['sentences']
+            rows = it.get('raw') or []
+            si = u['si']
+            row = u.get('raw_row')
+
+            if u['deleted']:
+                sents.insert(min(si, len(sents)), u['sent'])
+                if row is not None:
+                    rows.insert(min(u['raw_i'], len(rows)) if u['raw_i'] >= 0 else len(rows), row)
+            elif 0 <= si < len(sents):
+                sents[si] = u['sent']
+                if row is not None and 0 <= u['raw_i'] < len(rows):
+                    rows[u['raw_i']] = (row[0], row[1], u['sent'].text)
+            else:
+                sents.insert(min(si, len(sents)), u['sent'])
+
+            log.info('撤销 [%d:%d] → %r', u['idx'], si, u['sent'].text[:30])
+            return {'ok': True, 'idx': u['idx'], 'si': si,
+                    'text': u['sent'].text, 'deleted': u['deleted']}
+        return {'ok': False, 'msg': '没有可撤销的'}
 
     @_logged
     def export(self, idx, kind, path=None):

@@ -114,6 +114,17 @@
     border-bottom:1px solid var(--line); background:var(--bg);
   }
   .rtitle{font-size:12.5px; color:var(--tx2);}
+  .search{
+    display:flex; align-items:center; gap:7px; margin-left:16px; height:28px;
+    background:#212327; border:1px solid var(--line); border-radius:7px; padding:0 10px;
+  }
+  .search input{
+    background:transparent; border:none; outline:none; color:var(--tx);
+    font-family:inherit; font-size:12.5px; width:158px;
+  }
+  .search input::placeholder{color:var(--tx3);}
+  .search .n{font-size:11px; color:var(--tx3); min-width:26px; text-align:right;}
+  .search .n.on{color:var(--acc);}
   .ract{display:flex; gap:8px; margin-left:auto;}
   .drop{position:relative;}
   .dd{
@@ -141,14 +152,36 @@
     opacity:0; transition:.12s;
   }
   .spkname:hover .ren{opacity:1;}
-  .sent{display:flex; gap:14px; padding:7px 10px; border-radius:7px; transition:.12s;}
+  .sent{display:flex; gap:14px; padding:7px 10px; border-radius:7px; transition:.12s;
+        position:relative;}
   .sent:hover{background:var(--panel);}
   .sent .t{
     font-size:11px; color:var(--tx3); font-family:"Cascadia Mono",Consolas,monospace;
-    padding-top:3px; min-width:52px; user-select:text;
+    padding-top:3px; min-width:52px; user-select:text; cursor:pointer;
   }
+  .sent .t:hover{color:var(--acc);}
   .sent .x{font-size:14.5px; line-height:1.95; color:var(--tx); user-select:text;
-           letter-spacing:.2px;}
+           letter-spacing:.2px; flex:1;}
+  /* 正在播这一句：左侧亮一条 */
+  .sent.playing{background:#2c2a24; box-shadow:inset 3px 0 0 var(--acc);}
+  .sent.playing .t{color:var(--acc);}
+  /* 搜索命中 / 当前命中 */
+  .sent.hit{background:#282c33;}
+  .sent.cur{background:#31353d; box-shadow:inset 3px 0 0 var(--run);}
+  .sent.hit .x b{background:rgba(217,164,65,.28); border-radius:3px; padding:0 1px;
+                 color:var(--acc2); font-weight:inherit;}
+  .pen{
+    position:absolute; right:8px; top:7px; font-size:10.5px; color:var(--tx3);
+    border:1px solid var(--line); border-radius:5px; padding:0 6px; cursor:pointer;
+    opacity:0; transition:.12s; background:var(--panel2); line-height:17px;
+  }
+  .sent:hover .pen{opacity:1;}
+  .pen:hover{color:var(--acc); border-color:var(--acc);}
+  .editbox{
+    flex:1; background:#191b1f; border:1px solid var(--acc); border-radius:7px;
+    color:var(--tx); font-family:inherit; font-size:14.5px; line-height:1.9;
+    padding:4px 9px; outline:none; resize:none; min-height:32px; overflow:hidden;
+  }
   .placeholder{
     height:100%; display:flex; flex-direction:column; align-items:center;
     justify-content:center; color:var(--tx3); gap:14px; font-size:12.5px;
@@ -239,6 +272,11 @@
   <div class="right">
     <div class="rtop">
       <div class="rtitle" id="rtitle">转写结果</div>
+      <div class="search">
+        <input id="q" placeholder="搜错字，回车跳下一处" autocomplete="off"
+               oninput="doSearch()" onkeydown="qKey(event)">
+        <span class="n" id="qn"></span>
+      </div>
       <div class="ract">
         <button class="btn btn-ghost" onclick="copyAll()" id="btnCopy" disabled>复制</button>
         <div class="drop">
@@ -282,7 +320,7 @@
 
 <script>
 let state = [], sel = -1, results = {}, busy = false, t0 = 0;
-const APP_VER = '0.1.2';
+const APP_VER = '0.3.0';
 
 const $ = id => document.getElementById(id);
 
@@ -388,7 +426,7 @@ async function select(i){
     return;
   }
   let html = '', cur = undefined, open = false;
-  r.sentences.forEach(s => {
+  r.sentences.forEach((s, si) => {
     const spk = s.speaker || '';
     if (spk !== cur){
       if (open) html += '</div>';
@@ -396,12 +434,13 @@ async function select(i){
       open = !!spk;
       cur = spk;
     }
-    html += `<div class="sent"><div class="t">${fmtT(s.start)}</div><div class="x">${esc(s.text)}</div></div>`;
+    html += `<div class="sent" data-si="${si}"><div class="t" title="点时间码，从这句听原音">${fmtT(s.start)}</div><div class="x">${esc(s.text)}</div><div class="pen" title="改这一句的字（清空=删掉这句）">改</div></div>`;
   });
   if (open) html += '</div>';
   box.innerHTML = html;
   box.scrollTop = 0;
   $('btnExp').disabled = false; $('btnCopy').disabled = false;
+  if ($('q').value.trim()) doSearch();     // 换文件后保持搜索词有效
 }
 /* ---- 说话人改名：点「说话人 1」就能换成「主持人」「嘉宾」 ---- */
 $('result').addEventListener('click', e=>{
@@ -435,6 +474,160 @@ async function doRename(){
   const r = await pywebview.api.rename_speaker(sel, old, v);
   if (r && r.ok) { $('fstate').textContent = `已改名，${r.n} 句`; await select(sel); }
 }
+/* ================= 校对：听原音 · 搜错字 · 改字 ================= */
+const player = new Audio();
+let hitList = [], hitAt = -1;
+
+function markPlaying(si){
+  document.querySelectorAll('.sent.playing').forEach(e=>e.classList.remove('playing'));
+  if (si >= 0){
+    const el = document.querySelector(`.sent[data-si="${si}"]`);
+    if (el) el.classList.add('playing');
+  }
+}
+
+/* ---- 双击/点时间码 → 从这句开始播原音 ---- */
+async function playSent(si){
+  if (sel < 0 || si < 0) return;
+  markPlaying(si);
+  $('fstate').textContent = `取第 ${si+1} 句的原音…`;
+  let r;
+  try { r = await pywebview.api.clip(sel, si); }
+  catch (e) { markPlaying(-1); $('fstate').textContent = '取音频失败'; return; }
+  if (!r || !r.ok){
+    markPlaying(-1);
+    $('fstate').textContent = (r && r.msg) || '取音频失败';
+    return;
+  }
+  player.src = r.url;
+  try { await player.play(); } catch (e) {}
+  $('fstate').textContent = `第 ${si+1} 句 · 听原音`;
+}
+player.onended = ()=>{ markPlaying(-1); $('fstate').textContent = '这一段播完了'; };
+player.onerror = ()=>{ markPlaying(-1); $('fstate').textContent = '这段音频播不了'; };
+
+/* ---- 搜索：输错字/关键词，跳到命中句 ---- */
+function doSearch(){
+  const q = $('q').value.trim();
+  hitList = []; hitAt = -1;
+  document.querySelectorAll('.sent').forEach(e=>e.classList.remove('hit', 'cur'));
+  if (!q){
+    $('qn').textContent = '';
+    $('qn').classList.remove('on');
+    return;
+  }
+  const ql = q.toLowerCase();
+  document.querySelectorAll('.sent').forEach(e=>{
+    const x = e.querySelector('.x');
+    if (x && x.textContent.toLowerCase().includes(ql)){
+      e.classList.add('hit');
+      hitList.push(e);
+    }
+  });
+  $('qn').classList.toggle('on', hitList.length > 0);
+  if (hitList.length) gotoHit(0);
+  else $('qn').textContent = '没有';
+}
+function gotoHit(i){
+  if (!hitList.length) return;
+  hitAt = ((i % hitList.length) + hitList.length) % hitList.length;
+  hitList.forEach(e=>e.classList.remove('cur'));
+  const el = hitList[hitAt];
+  el.classList.add('cur');
+  el.scrollIntoView({block: 'center', behavior: 'smooth'});
+  $('qn').textContent = `${hitAt + 1}/${hitList.length}`;
+}
+function qKey(e){
+  e.stopPropagation();
+  if (e.key === 'Enter'){
+    e.preventDefault();
+    if (hitList.length) gotoHit(hitAt + 1);
+  } else if (e.key === 'Escape'){
+    $('q').value = '';
+    doSearch();
+    $('q').blur();
+  }
+}
+
+/* ---- 改字：点句子右边的「改」，就地编辑 ---- */
+function startEdit(el){
+  if (!el || el.querySelector('.editbox')) return;
+  const si = +el.dataset.si;
+  const x = el.querySelector('.x');
+  if (!x) return;
+  const old = x.textContent;
+  const ta = document.createElement('textarea');
+  ta.className = 'editbox';
+  ta.value = old;
+  x.replaceWith(ta);
+  const fit = ()=>{
+    ta.style.height = 'auto';
+    ta.style.height = Math.max(32, ta.scrollHeight) + 'px';
+  };
+  ta.addEventListener('input', fit);
+  setTimeout(()=>{ ta.focus(); ta.select(); fit(); }, 20);
+
+  let done = false;
+  const finish = async (save)=>{
+    if (done) return;
+    done = true;
+    const v = ta.value;
+    if (!save || v.trim() === old.trim()){
+      await select(sel);
+      return;
+    }
+    let r;
+    try { r = await pywebview.api.set_text(sel, si, v); }
+    catch (e) { r = { ok: false, msg: '保存失败' }; }
+    if (r && r.ok && r.changed){
+      $('fstate').textContent = v.trim() ? '改好了，导出会用新文字' : '已删掉这一句（Ctrl+Z 可撤销）';
+    } else {
+      $('fstate').textContent = (r && r.msg) || '没改成';
+    }
+    await select(sel);
+    const nx = document.querySelector(`.sent[data-si="${si}"]`);
+    if (nx) nx.scrollIntoView({block: 'nearest'});
+  };
+  ta.addEventListener('keydown', e=>{
+    e.stopPropagation();
+    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape'){ e.preventDefault(); finish(false); }
+  });
+  ta.addEventListener('blur', ()=>finish(true));
+}
+
+async function undoText(){
+  if (sel < 0) return;
+  const r = await pywebview.api.undo_text(sel);
+  if (r && r.ok){
+    $('fstate').textContent = '已撤销上一次修改';
+    await select(sel);
+  } else {
+    $('fstate').textContent = (r && r.msg) || '没有可撤销的';
+  }
+}
+document.addEventListener('keydown', e=>{
+  if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'z'){
+    const t = e.target;
+    if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) return;
+    if (sel < 0) return;
+    e.preventDefault();
+    undoText();
+  }
+});
+
+$('result').addEventListener('click', e=>{
+  const pen = e.target.closest('.pen');
+  if (pen){ startEdit(pen.closest('.sent')); return; }
+  const tt = e.target.closest('.sent .t');
+  if (tt){ playSent(+tt.closest('.sent').dataset.si); }
+});
+$('result').addEventListener('dblclick', e=>{
+  if (e.target.closest('.editbox') || e.target.closest('.pen')) return;
+  const s = e.target.closest('.sent');
+  if (s) playSent(+s.dataset.si);
+});
+
 function toggleDD(e){
   e.stopPropagation();
   $('dd').classList.toggle('on');
@@ -469,6 +662,14 @@ const HELP_HTML = `
   <li>点「开始转写」，等进度走完</li>
   <li>右侧看稿，点「导出」选格式</li>
 </ul>
+<h4>校对：边听边改</h4>
+<ul>
+  <li><b>双击任意一句</b>（或点左边的时码），从这句开始播原音，边听边改</li>
+  <li>鼠标移到句子上，右边出现「改」→ 点它就地改字，<b>回车保存 / Esc 取消</b></li>
+  <li>那句是噪声、语气词？<b>把字清空</b>再回车 = 删掉这一句</li>
+  <li>改错了按 <code>Ctrl+Z</code> 撤销，能一路退回去</li>
+  <li>顶部搜索框输个错字，<b>回车跳下一处</b>，命中句会标出来</li>
+</ul>
 <h4>区分了说话人之后</h4>
 <ul>
   <li>稿子里每个人前面会有「说话人 1 / 2」的小标题</li>
@@ -482,7 +683,7 @@ const HELP_HTML = `
   <li><b>.txt</b> 干净稿，按段落分好，直接贴</li>
   <li><b>.md</b> 带标题的 Markdown</li>
   <li><b>.docx</b> Word 文档，可以直接改</li>
-  <li><b>.srt / .vtt</b> 字幕，剪映、Premiere、B站都能吃</li>
+  <li><b>.srt / .vtt</b> 字幕，剪映、Premiere、B站都能吃；一句太长会自动折成两行，字幕不溢屏</li>
   <li><b>.json</b> 带时间轴的结构化数据</li>
   <li><b>.txt（带时间戳）</b> 每行前面标时间</li>
 </ul>

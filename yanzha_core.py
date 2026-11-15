@@ -110,6 +110,38 @@ def duration_of(path: str) -> float:
     return 0.0
 
 
+def make_clip_b64(src: str, start: float, dur: float, kbps: int = 48) -> str:
+    """切一小段音频给界面播放（校对时听原音），返回 base64 data URI。
+
+    不落盘：临时文件用完就删，目录里不留任何痕迹。
+    """
+    import base64
+    import tempfile
+    start = max(0.0, float(start))
+    dur = max(0.5, min(float(dur), 90.0))
+    fd, tmp = tempfile.mkstemp(suffix='.mp3', prefix='yz_')
+    os.close(fd)
+    try:
+        cmd = [ffmpeg_path(), '-nostdin', '-v', 'error', '-y',
+               '-ss', '%.3f' % start, '-t', '%.3f' % dur, '-i', src,
+               '-vn', '-ac', '1', '-ar', '16000',
+               '-acodec', 'libmp3lame', '-b:a', '%dk' % kbps, tmp]
+        r = subprocess.run(cmd, capture_output=True, timeout=90)
+        if r.returncode != 0:
+            log = (r.stderr or b'').decode('utf-8', 'ignore').strip().splitlines()
+            raise DecodeError('切片失败：%s' % (log[-1] if log else '未知错误'))
+        with open(tmp, 'rb') as f:
+            raw = f.read()
+        if not raw:
+            raise DecodeError('这段没有声音')
+        return 'data:audio/mpeg;base64,' + base64.b64encode(raw).decode('ascii')
+    finally:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+
+
 # ---------------------------------------------------------------- 语音分段
 
 @dataclass
@@ -919,6 +951,42 @@ def _spk_label(spk: str) -> str:
     return '说话人 %s' % spk if str(spk).isdigit() else str(spk)
 
 
+def _cw(ch: str) -> float:
+    """一个字符占多宽：中日韩全角算 1，ASCII 算 0.55。"""
+    return 0.55 if ord(ch) < 128 else 1.0
+
+
+def wrap_subtitle(text: str, limit: float = 16.0) -> str:
+    """字幕太长就折成两行。
+
+    剪映、PR 里一行超过 16 个中文字就会顶到画幅边缘，折一下最省事。
+    断点优先挑中间的标点，挑不到才按宽度硬切。
+    """
+    text = (text or '').strip()
+    if not text or sum(_cw(c) for c in text) <= limit:
+        return text
+    total = sum(_cw(c) for c in text)
+    mid = total / 2.0
+
+    acc, best, best_d = 0.0, -1, 1e9
+    for i, ch in enumerate(text):
+        acc += _cw(ch)
+        if ch in '，。！？；：、,.!?;:）)》」” ' and i + 1 < len(text):
+            d = abs(acc - mid)
+            if d < best_d:
+                best_d, best = d, i + 1
+    if best <= 0:
+        acc = 0.0
+        for i, ch in enumerate(text):
+            acc += _cw(ch)
+            if acc >= mid:
+                best = i + 1
+                break
+    if best <= 0 or best >= len(text):
+        return text
+    return text[:best].rstrip() + '\n' + text[best:].lstrip()
+
+
 def _paragraphs(sentences: list[Sentence], soft: int = 150):
     """切段落，返回 [(speaker, text), ...]。
 
@@ -985,13 +1053,14 @@ def to_md(sentences: list[Sentence], meta: str = '') -> str:
     return '\n'.join(lines) + '\n'
 
 
-def to_srt(sentences: list[Sentence]) -> str:
+def to_srt(sentences: list[Sentence], wrap: float = 16.0) -> str:
     out = []
     for i, s in enumerate(sentences, 1):
         spk = (getattr(s, 'speaker', '') or '').strip()
         out.append(str(i))
         out.append('%s --> %s' % (_ts(s.start), _ts(s.end)))
-        out.append(('%s：%s' % (_spk_label(spk), s.text)) if spk else s.text)
+        body = wrap_subtitle(s.text, wrap) if wrap else s.text
+        out.append(('%s：%s' % (_spk_label(spk), body)) if spk else body)
         out.append('')
     return '\n'.join(out)
 
@@ -1003,12 +1072,13 @@ def _ts_vtt(sec: float) -> str:
     return '%02d:%02d:%06.3f' % (h, m, s)
 
 
-def to_vtt(sentences: list[Sentence]) -> str:
+def to_vtt(sentences: list[Sentence], wrap: float = 16.0) -> str:
     out = ['WEBVTT', '']
     for s in sentences:
         spk = (getattr(s, 'speaker', '') or '').strip()
+        body = wrap_subtitle(s.text, wrap) if wrap else s.text
         out.append('%s --> %s' % (_ts_vtt(s.start), _ts_vtt(s.end)))
-        out.append(('<v %s>%s' % (_spk_label(spk), s.text)) if spk else s.text)
+        out.append(('<v %s>%s' % (_spk_label(spk), body)) if spk else body)
         out.append('')
     return '\n'.join(out)
 
