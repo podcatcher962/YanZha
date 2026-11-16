@@ -75,13 +75,26 @@ class DecodeError(RuntimeError):
     pass
 
 
+# 打包成 --noconsole 的 EXE 后，每次调 ffmpeg/ffprobe 都会弹一个黑色命令行窗口
+# 一闪而过（用户在点「开始转写」时看到的就是这个）。CREATE_NO_WINDOW 让子进程
+# 完全无窗口；非 Windows 上没有这个常量，取 0 即可。
+_NO_WIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
+
+def _run(cmd, timeout):
+    """跑外部命令，不弹黑框。"""
+    return subprocess.run(cmd, capture_output=True, timeout=timeout,
+                          creationflags=_NO_WIN,
+                          stdin=subprocess.DEVNULL)
+
+
 def decode_audio(path: str) -> np.ndarray:
     """任何音视频 → 16k 单声道 float32。失败抛 DecodeError。"""
     exe = ffmpeg_path()
     cmd = [exe, '-nostdin', '-v', 'error', '-i', path,
            '-vn', '-ac', '1', '-ar', str(SR), '-f', 'f32le', '-acodec', 'pcm_f32le', '-']
     try:
-        r = subprocess.run(cmd, capture_output=True, timeout=3600)
+        r = _run(cmd, 3600)
     except FileNotFoundError:
         raise DecodeError('找不到 ffmpeg，无法解码音频')
     except subprocess.TimeoutExpired:
@@ -96,14 +109,21 @@ def decode_audio(path: str) -> np.ndarray:
 
 
 def duration_of(path: str) -> float:
-    """用 ffmpeg 读时长，读不到返回 0。"""
-    cmd = [ffmpeg_path(), '-nostdin', '-v', 'error', '-i', path, '-f', 'null', '-']
+    """用 ffmpeg 读时长，读不到返回 0。
+
+    不要写成 `-v error ... -f null -`：那样有两个坑，而且都很贵——
+      1. `Duration:` 是 info 级的，`-v error` 直接把它滤掉，结果永远返回 0；
+      2. `-f null -` 会把整个文件全量解码一遍，89 分钟的音频要白跑几十秒。
+    只给 `-i`、不给输出文件，ffmpeg 打印完流信息就报「没有输出文件」退出，
+    毫秒级返回，Duration 行也还在。
+    """
+    cmd = [ffmpeg_path(), '-nostdin', '-hide_banner', '-i', path]
     try:
-        r = subprocess.run(cmd, capture_output=True, timeout=120)
+        r = _run(cmd, 30)
     except Exception:
         return 0.0
     txt = (r.stderr or b'').decode('utf-8', 'ignore')
-    m = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.\d+)', txt)
+    m = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.?\d*)', txt)
     if m:
         h, mi, s = m.groups()
         return int(h) * 3600 + int(mi) * 60 + float(s)
@@ -126,7 +146,7 @@ def make_clip_b64(src: str, start: float, dur: float, kbps: int = 48) -> str:
                '-ss', '%.3f' % start, '-t', '%.3f' % dur, '-i', src,
                '-vn', '-ac', '1', '-ar', '16000',
                '-acodec', 'libmp3lame', '-b:a', '%dk' % kbps, tmp]
-        r = subprocess.run(cmd, capture_output=True, timeout=90)
+        r = _run(cmd, 90)
         if r.returncode != 0:
             log = (r.stderr or b'').decode('utf-8', 'ignore').strip().splitlines()
             raise DecodeError('切片失败：%s' % (log[-1] if log else '未知错误'))

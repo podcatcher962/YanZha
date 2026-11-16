@@ -106,6 +106,26 @@
   .chk em{color:var(--tx3); font-style:normal; font-size:11px; margin-left:6px;}
   .chk.off{opacity:.45; pointer-events:none;}
   .left-bottom .btn{width:100%;}
+  /* 没导出的草稿：程序关过一次，回来还能接着改 */
+  .draftbar{
+    margin:0 16px 9px; padding:9px 12px; border-radius:8px; cursor:pointer;
+    background:#332e22; border:1px solid #4d4330; color:#dfc38a;
+    font-size:12px; display:flex; align-items:center; gap:8px;
+  }
+  .draftbar:hover{background:#3c3628;}
+  .draftbar em{font-style:normal; color:#9d8b67; font-size:11px; margin-left:auto;}
+  .draftbar[hidden]{display:none;}
+  .dlist{margin:0; padding:0; list-style:none;}
+  .dlist li{display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line);}
+  .dlist li:last-child{border-bottom:none;}
+  .dlist .nm2{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px;}
+  .dlist .k{font-size:11px; color:var(--tx3); white-space:nowrap;}
+  .dlist button{
+    background:#33363c; border:none; color:var(--tx2); border-radius:6px;
+    padding:5px 10px; font-size:11.5px; cursor:pointer; font-family:inherit;
+  }
+  .dlist button:hover{background:#3f434a; color:var(--tx);}
+  .dlist button.dg:hover{background:#4a2f2f; color:#e8a0a0;}
   .hint{font-size:11px; color:var(--tx3); text-align:center; margin-top:8px;}
   /* ---------- 右栏 ---------- */
   .right{flex:1; display:flex; flex-direction:column; min-width:0;}
@@ -117,6 +137,7 @@
   .search{
     display:flex; align-items:center; gap:7px; margin-left:16px; height:28px;
     background:#212327; border:1px solid var(--line); border-radius:7px; padding:0 10px;
+    position:relative;
   }
   .search input{
     background:transparent; border:none; outline:none; color:var(--tx);
@@ -125,6 +146,52 @@
   .search input::placeholder{color:var(--tx3);}
   .search .n{font-size:11px; color:var(--tx3); min-width:26px; text-align:right;}
   .search .n.on{color:var(--acc);}
+  .search .bt{
+    background:transparent; border:none; color:var(--tx3); cursor:pointer;
+    font-family:inherit; font-size:12.5px; line-height:1; padding:0 2px;
+  }
+  .search .bt:hover{color:var(--tx);}
+  .search .bt.on{color:var(--acc);}
+  .rtop{position:relative;}
+  .repbox{
+    position:absolute; left:-10px; top:34px; z-index:30; display:none;
+    align-items:center; gap:7px; padding:9px;
+    background:var(--panel2); border:1px solid var(--line); border-radius:9px;
+    box-shadow:0 10px 26px rgba(0,0,0,.5);
+  }
+  .repbox.on{display:flex;}
+  .repbox input{
+    background:#26282d; border:1px solid #3a3d44; border-radius:6px; color:var(--tx);
+    font-family:inherit; font-size:12.5px; padding:5px 9px; width:186px; outline:none;
+  }
+  .repbox input:focus{border-color:var(--acc);}
+  .repbox .k{
+    background:#26282d; border:1px solid var(--line); border-radius:6px; color:var(--tx2);
+    font-family:inherit; font-size:12px; padding:5px 11px; cursor:pointer; white-space:nowrap;
+  }
+  .repbox .k:hover{color:var(--tx); border-color:#4a4e56;}
+  .repbox .k.p{background:var(--acc); border-color:var(--acc); color:#1a1710; font-weight:600;}
+  .repbox .k.p:hover{background:var(--acc2);}
+  /* 「记住这条」：勾上就把这次替换存进术语表，下期不用再改 */
+  .repbox .rkeep{
+    display:flex; align-items:center; gap:5px; margin-left:2px; padding-left:9px;
+    border-left:1px solid var(--line); font-size:11.5px; color:var(--tx3);
+    cursor:pointer; user-select:none; white-space:nowrap;
+  }
+  .repbox .rkeep:hover{color:var(--tx2);}
+  .repbox .rkeep input{
+    appearance:none; -webkit-appearance:none; flex:0 0 14px; width:14px; height:14px;
+    min-width:14px; border-radius:3px; border:1px solid #4a4e56; background:#26282d;
+    cursor:pointer; position:relative; padding:0; margin:0;
+  }
+  .repbox .rkeep input:checked{background:var(--acc); border-color:var(--acc);}
+  .repbox .rkeep input:checked::after{
+    content:''; position:absolute; left:4px; top:1px; width:3px; height:7px;
+    border:solid #1a1710; border-width:0 2px 2px 0; transform:rotate(42deg);
+  }
+  ul.audit{margin:10px 0 0; padding-left:20px;}
+  ul.audit li{margin-bottom:11px; line-height:1.7;}
+  .dd button.last::after{content:'·上次'; color:var(--tx3); font-size:11px; margin-left:6px;}
   .ract{display:flex; gap:8px; margin-left:auto;}
   .drop{position:relative;}
   .dd{
@@ -141,6 +208,7 @@
   }
   .dd button:hover{background:#32353b; color:var(--tx);}
   .result{flex:1; overflow-y:auto; padding:8px 20px 40px;}
+  .result.rep-on{padding-top:52px;}    /* 替换条展开时把内容让开，别盖住第一句 */
   .spkblock{margin-bottom:6px; padding-left:2px; border-left:2px solid #3a3d44; padding-top:2px;}
   .spkname{
     font-size:11px; color:var(--acc); font-weight:600; letter-spacing:.4px;
@@ -233,6 +301,42 @@
   .mbody code{background:#2a2d33; padding:1px 5px; border-radius:4px; color:var(--acc); font-size:11.5px;}
   .mbody .warn{color:#d9a441;}
   .mbody .thin{color:var(--tx3); font-size:11.5px;}
+  .mbody textarea{
+    width:100%; min-height:148px; resize:vertical; background:#24262b;
+    color:var(--tx); border:1px solid var(--line); border-radius:8px;
+    padding:10px 12px; font-family:inherit; font-size:12.5px; line-height:1.75;
+    outline:none; box-sizing:border-box; display:block; margin-top:8px;
+  }
+  .mbody textarea:focus{border-color:var(--acc);}
+  .mbody textarea::placeholder{color:#5b6069;}
+  /* 术语表：左右两栏，用户不用敲箭头 */
+  .tgrid{margin-top:10px;}
+  .tgrid .thead,.tgrid .trow{
+    display:grid; grid-template-columns:1fr 20px 1fr 24px;
+    gap:8px; align-items:center;
+  }
+  .tgrid .thead{font-size:11px; color:var(--tx3); padding:0 0 7px 2px;}
+  .tgrid .trow{margin-bottom:7px;}
+  .tgrid input{
+    width:100%; box-sizing:border-box; background:#24262b; color:var(--tx);
+    border:1px solid var(--line); border-radius:7px; padding:7px 10px;
+    font-family:inherit; font-size:12.5px; outline:none; min-width:0;
+  }
+  .tgrid input:focus{border-color:var(--acc);}
+  .tgrid input::placeholder{color:#5b6069;}
+  .tgrid input.j{background:#212328;}
+  .tgrid .arw{text-align:center; color:#6a6f78; font-size:13px; user-select:none;}
+  .tgrid .x2{
+    background:transparent; border:none; color:#6a6f78; cursor:pointer;
+    font-size:16px; line-height:1; padding:3px 0; border-radius:5px; font-family:inherit;
+  }
+  .tgrid .x2:hover{color:#e07a5f; background:#332a28;}
+  .tgrid .empty{color:var(--tx3); font-size:11.5px; padding:0 0 6px 2px;}
+  .tadd{
+    margin-top:3px; background:transparent; border:1px dashed #454952; color:var(--tx2);
+    border-radius:7px; padding:6px 13px; font-size:12px; cursor:pointer; font-family:inherit;
+  }
+  .tadd:hover{border-color:var(--acc); color:var(--acc);}
 </style>
 </head>
 <body>
@@ -243,6 +347,7 @@
   <div class="sub">录音转文字 · 全程离线</div>
   <div class="grow"></div>
   <div class="badge" id="badge">模型就绪</div>
+  <button class="menu-btn" onclick="terms()">术语表</button>
   <button class="menu-btn" onclick="help()">使用说明</button>
   <button class="menu-btn" onclick="about()">关于</button>
 </header>
@@ -252,6 +357,9 @@
     <div class="left-top">
       <button class="btn btn-main" id="btnAdd" onclick="pick()">添加音视频文件</button>
       <button class="btn btn-ghost" id="btnClear" onclick="clearAll()">清空</button>
+    </div>
+    <div class="draftbar" id="draftBar" hidden onclick="showDrafts()">
+      <span>有 <b id="draftN">0</b> 份没导出的稿子</span><em>点这里接着改</em>
     </div>
     <div class="list" id="list">
       <div class="empty" id="emptyTip">
@@ -276,6 +384,18 @@
         <input id="q" placeholder="搜错字，回车跳下一处" autocomplete="off"
                oninput="doSearch()" onkeydown="qKey(event)">
         <span class="n" id="qn"></span>
+        <button class="bt" id="btnRep" title="查找替换（把搜到的词一次改掉）"
+                onclick="toggleRep(event)">替</button>
+        <div class="repbox" id="repbox">
+          <input id="rp" placeholder="替换为…（留空＝删掉这个词）" autocomplete="off"
+                 onkeydown="repKey(event)">
+          <button class="k" onclick="replaceOne()">替换一处</button>
+          <button class="k p" onclick="replaceAllHits()">全部替换</button>
+          <label class="rkeep" title="把「搜的词 → 替换为」记进术语表，往后每期转完自动改">
+            <input type="checkbox" id="rkeep">
+            <span>记住</span>
+          </label>
+        </div>
       </div>
       <div class="ract">
         <button class="btn btn-ghost" onclick="copyAll()" id="btnCopy" disabled>复制</button>
@@ -290,6 +410,9 @@
             <button onclick="doExport('vtt')">字幕 .vtt</button>
             <button onclick="doExport('tsv')">带时间戳 .txt</button>
             <button onclick="doExport('json')">结构化 .json</button>
+            <div class="dd-sep"></div>
+            <button onclick="doExportAll()">全部导出到文件夹…</button>
+            <button onclick="applyTerms()">按术语表改一遍</button>
           </div>
         </div>
       </div>
@@ -320,7 +443,7 @@
 
 <script>
 let state = [], sel = -1, results = {}, busy = false, t0 = 0;
-const APP_VER = '0.3.0';
+const APP_VER = '0.5.0';
 
 const $ = id => document.getElementById(id);
 
@@ -352,7 +475,10 @@ function renderList(st){
     let meta = [];
     if (it.status==='done' && it.chars) meta.push(`${it.chars} 字`);
     if (it.duration) meta.push(fmtDur(it.duration));
-    if (it.status==='run') meta.push(it.msg || (pct+'%'));
+    if (it.status==='run'){
+      const e = etaOf(it.idx, it.progress||0);
+      meta.push((it.msg || (pct+'%')) + (e ? ' · ' + e : ''));
+    }
     if (it.status==='error') meta.push(`<span class="err">${it.error||'失败'}</span>`);
     if (it.status==='wait') meta.push('待转写');
     d.innerHTML = `<div class="nm" title="${esc(it.name)}">${esc(it.name)}</div>
@@ -363,10 +489,30 @@ function renderList(st){
   });
   if (!busy) $('fstate').textContent = state.length ? `${state.length} 个文件` : '就绪';
 }
+/* 剩余时间：拿最近一小段的推进速度外推。
+   进度分三段（解码 10% / 识别 62% / 分人 9%），速率差很多，
+   所以只窗口内算、不用全程平均，跨阶段时会自己跟上。 */
+const progTrack = {};
+function etaOf(idx, p){
+  const tr = progTrack[idx];
+  if (!tr || tr.hist.length < 3 || p >= 1) return '';
+  const a = tr.hist[0], b = tr.hist[tr.hist.length - 1];
+  const dp = b.p - a.p, dt = (b.t - a.t) / 1000;
+  if (dp < 0.01 || dt < 2) return '';
+  const left = Math.max(0, (1 - p) * dt / dp);
+  if (left < 15) return '马上好';
+  const m = Math.round(left / 60);
+  return m >= 1 ? `还剩约 ${m} 分钟` : `还剩约 ${Math.round(left / 10) * 10} 秒`;
+}
 function onItemProgress(idx, p, msg){
   const it = state.find(x=>x.idx===idx);
+  const now = Date.now();
+  const tr = progTrack[idx] || (progTrack[idx] = {hist: []});
+  tr.hist.push({t: now, p: p});
+  while (tr.hist.length > 2 && now - tr.hist[0].t > 120000) tr.hist.shift();
   if (it){ it.progress = p; it.msg = msg; it.status='run'; renderList(state); }
-  $('fstate').textContent = msg || '转写中';
+  const e = etaOf(idx, p);
+  $('fstate').textContent = (msg || '转写中') + (e ? ' · ' + e : '');
 }
 function showResult(idx){
   select(idx);
@@ -406,6 +552,7 @@ async function start(){
   const r = await pywebview.api.start();
   if (!r.ok) { $('fstate').textContent = r.msg || '无法开始'; return; }
   busy = true;
+  for (const k in progTrack) delete progTrack[k];
   $('btnStart').textContent = '停止';
   $('btnAdd').disabled = true;
   $('btnClear').disabled = true;
@@ -549,6 +696,77 @@ function qKey(e){
   }
 }
 
+/* ---- 查找替换：把搜到的词一次改掉，不用一句句点「改」 ---- */
+function toggleRep(e){
+  if (e) e.stopPropagation();
+  const box = $('repbox'), on = box.classList.toggle('on');
+  $('btnRep').classList.toggle('on', on);
+  $('result').classList.toggle('rep-on', on);      // 展开时把稿子往下让一点
+  if (on){
+    const rp = $('rp');
+    if (rp.value) rp.select(); else rp.focus();
+  }
+}
+document.addEventListener('click', e=>{
+  if (e.target.closest('.repbox') || e.target.closest('#btnRep')) return;
+  $('repbox').classList.remove('on');
+  $('btnRep').classList.remove('on');
+});
+function repKey(e){
+  e.stopPropagation();
+  if (e.key === 'Enter'){ e.preventDefault(); replaceOne(); }
+  else if (e.key === 'Escape'){ toggleRep(e); $('q').focus(); }
+}
+function repPair(){
+  const q = $('q').value.trim(), r = $('rp').value;
+  if (!q){ $('fstate').textContent = '先在左边的框里填要替换的词'; $('q').focus(); return null; }
+  return [q, r];
+}
+function repRegex(q){
+  return new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+}
+async function replaceOne(){
+  const p = repPair(); if (!p) return;
+  if (sel < 0) return;
+  if (hitAt < 0 || !hitList.length){ $('fstate').textContent = `这份稿里没有「${p[0]}」`; return; }
+  const el = hitList[hitAt];
+  const si = +el.dataset.si;
+  const old = (el.querySelector('.x') || {}).textContent || '';
+  let nt = old.replace(repRegex(p[0]), p[1]).replace(/\s+/g, ' ').trim();
+  if (!p[1]) nt = nt.replace(/^[，,、；;：:\s]+/, '');   // 删词后别留下开头的逗号
+  const r = await pywebview.api.set_text(sel, si, nt);
+  await select(sel);                       // 先重绘，再写状态栏（renderList 会覆盖它）
+  let msg = (r && r.ok)
+    ? (nt ? '替换了这一句（Ctrl+Z 可撤销）' : '这一句换空了，已整句删掉（Ctrl+Z 可撤销）')
+    : ((r && r.msg) || '没改成');
+  if (r && r.ok && $('rkeep') && $('rkeep').checked){
+    const k = await pywebview.api.terms_add([[p[0], p[1]]]);
+    if (k && k.ok) msg += ` · 已记进术语表（共 ${k.n} 条，往后自动改）`;
+  }
+  $('fstate').textContent = msg;
+}
+async function replaceAllHits(){
+  const p = repPair(); if (!p) return;
+  if (sel < 0){ $('fstate').textContent = '先选一个转好的文件'; return; }
+  const keep = !!($('rkeep') && $('rkeep').checked);
+  const r = await pywebview.api.replace_all(sel, p[0], p[1]);
+  if (!r || !r.ok){ $('fstate').textContent = (r && r.msg) || '替换失败'; return; }
+  let msg;
+  if (r.n || r.deleted){
+    msg = `换了 ${r.n} 句 · ${r.occ} 处`;
+    if (r.deleted) msg += `，另有 ${r.deleted} 句换空已删`;
+    msg += '（Ctrl+Z 整批退回）';
+  } else {
+    msg = r.msg || '没找到要替换的词';
+  }
+  if (keep){
+    const k = await pywebview.api.terms_add([[p[0], p[1]]]);
+    if (k && k.ok) msg += ` · 已记进术语表（共 ${k.n} 条，往后自动改）`;
+  }
+  await select(sel);                       // 先重绘，再写状态栏
+  $('fstate').textContent = msg;
+}
+
 /* ---- 改字：点句子右边的「改」，就地编辑 ---- */
 function startEdit(el){
   if (!el || el.querySelector('.editbox')) return;
@@ -600,8 +818,10 @@ async function undoText(){
   if (sel < 0) return;
   const r = await pywebview.api.undo_text(sel);
   if (r && r.ok){
-    $('fstate').textContent = '已撤销上一次修改';
-    await select(sel);
+    await select(sel);                     // 先重绘，再写状态栏
+    $('fstate').textContent = r.batch
+      ? `已撤销这次替换（${r.n} 句回到原样）`
+      : '已撤销上一次修改';
   } else {
     $('fstate').textContent = (r && r.msg) || '没有可撤销的';
   }
@@ -632,12 +852,248 @@ function toggleDD(e){
   e.stopPropagation();
   $('dd').classList.toggle('on');
 }document.addEventListener('click', ()=> $('dd').classList.remove('on'));
+const AUDIT_LABEL = {
+  empty: '整句只剩标点，没有字',
+  ghost: '这是识别器加的标注，不是谁说的话',
+  overlap: '同一段被识别了两遍，时间对得上'
+};
 async function doExport(k){
   $('dd').classList.remove('on');
   if (sel < 0) return;
-  const r = await pywebview.api.export(sel, k);
-  $('fstate').textContent = r.msg || '';
+  try { localStorage.setItem('yz.lastKind', k); } catch (e) {}
+  let a = null;
+  try { a = await pywebview.api.audit(sel); }
+  catch (e) { a = null; }
+  if (a && a.ok && a.total > 0){ showAudit(a, k); return; }
+  await exportNow(k, a);
 }
+async function exportNow(k, a){
+  const r = await pywebview.api.export(sel, k);
+  let msg = (r && r.msg) || '';
+  // 一句都没挑出来也要说一声，否则用户不知道「检查」到底跑没跑
+  if (a && a.ok && !a.total) msg = '导出前扫过一遍，没发现问题 · ' + msg;
+  $('fstate').textContent = msg;
+  markLastKind();
+  refreshDrafts();
+}
+/* 导出前检查：不是拦你，是提醒一句，改不改都照样能导 */
+function showAudit(a, k){
+  const rows = a.items.slice(0, 4).map(x => {
+    const extra = x.hint ? `　<span class="thin">${esc(x.hint)}</span>` : '';
+    return `<li><b>第 ${x.si + 1} 句</b>　<span style="color:#e0a54f">${AUDIT_LABEL[x.kind] || x.kind}</span>${extra}
+       <br><span class="thin">${esc(x.text)}</span></li>`;
+  }).join('');
+  openModal('导出前检查', `
+    <p>扫了一遍，有 <b>${a.total} 处</b>不是人嘴里说出来的东西：</p>
+    <ul class="audit">${rows}</ul>
+    ${a.total > 4 ? `<p class="thin" style="margin-top:4px">还有 ${a.total - 4} 处没列出来</p>` : ''}
+    <p class="thin" style="margin-top:14px">只看有没有多余的东西——句子长短、口头重复、拖音都是原声，
+      一个字都不提醒你改。下面这些清掉，稿子才是那个人真说过的。</p>
+    <p style="text-align:right;margin-top:14px">
+      <button class="btn btn-ghost" onclick="closeModal()">回去看看</button>
+      <button class="btn btn-main" style="flex:0 0 auto;margin-left:8px;padding:0 18px"
+              onclick="closeModal();exportNow('${k}')">照样导出</button>
+    </p>`);
+}
+function markLastKind(){
+  let k = '';
+  try { k = localStorage.getItem('yz.lastKind') || ''; } catch (e) {}
+  document.querySelectorAll('#dd button').forEach(b=>{
+    const m = (b.getAttribute('onclick') || '').match(/'(\w+)'/);
+    b.classList.toggle('last', !!m && m[1] === k);
+  });
+}
+/* ---------- 术语表 ---------- */
+/* 两栏：左边「转写里错的词」，右边「改成」。用户不用敲箭头（键盘上没有 →）。
+   粘贴整行「李蛋→李诞」到左栏会自动拆到两栏；左栏回车跳右栏，右栏回车加一行。 */
+const TERM_SEPS = ['→', '->', '=>', '\t'];
+let termComments = [];
+
+function splitTerm(s){
+  for (const sp of TERM_SEPS){
+    const i = s.indexOf(sp);
+    if (i >= 0) return [s.slice(0, i).trim(), s.slice(i + sp.length).trim()];
+  }
+  return [s.trim(), null];
+}
+function termRow(a, b){
+  const tr = document.createElement('div');
+  tr.className = 'trow';
+  const i1 = document.createElement('input');
+  i1.className = 'i'; i1.spellcheck = false;
+  i1.placeholder = '转写里错的词'; i1.value = a || '';
+  const arw = document.createElement('div');
+  arw.className = 'arw'; arw.textContent = '→';
+  const i2 = document.createElement('input');
+  i2.className = 'j'; i2.spellcheck = false;
+  i2.placeholder = '改成（留空＝删掉）'; i2.value = b || '';
+  const del = document.createElement('button');
+  del.className = 'x2'; del.type = 'button'; del.title = '不要这一条';
+  del.textContent = '×';
+  del.onclick = () => {
+    if (document.querySelectorAll('#termTbl .trow').length <= 1){
+      i1.value = ''; i2.value = ''; i1.focus(); return;   // 只剩一行就清空，不删
+    }
+    tr.remove();
+    markTermEmpty();
+  };
+  i1.addEventListener('keydown', e => {
+    // 中文输入法选字时也会按回车，别把它当成「跳到右栏」
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter'){ e.preventDefault(); i2.focus(); i2.select(); }
+  });
+  i1.addEventListener('paste', e => {
+    const t = ((e.clipboardData || window.clipboardData).getData('text') || '').trim();
+    const r = splitTerm(t);
+    if (r[1] !== null && !t.includes('\n')){
+      e.preventDefault(); i1.value = r[0]; i2.value = r[1]; i2.focus();
+    }
+  });
+  i2.addEventListener('keydown', e => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter'){ e.preventDefault(); addTermRow('', '', true); }
+  });
+  tr.append(i1, arw, i2, del);
+  return tr;
+}
+function markTermEmpty(){
+  const tb = $('termTbl');
+  if (!tb) return;
+  const old = tb.querySelector('.empty');
+  if (old) old.remove();
+  if (!tb.querySelector('.trow')){
+    const p = document.createElement('div');
+    p.className = 'empty'; p.textContent = '还没有条目，点下面的「+ 再加一条」';
+    tb.appendChild(p);
+  }
+}
+function addTermRow(a, b, focus){
+  const tb = $('termTbl');
+  if (!tb) return null;
+  const emp = tb.querySelector('.empty');
+  if (emp) emp.remove();
+  const tr = termRow(a, b);
+  tb.appendChild(tr);
+  if (focus) tr.querySelector('input').focus();
+  return tr;
+}
+async function terms(){
+  let r = {pairs: [], n: 0, auto: true, comments: []};
+  try { r = await pywebview.api.terms_get(); } catch(e){}
+  const pairs = r.pairs || [];
+  termComments = r.comments || [];
+  openModal('术语表', `
+    <p>同一个人名、书名、公司名，会在同一个人的每一期里错成同一个样子。
+       写在这里，转完自动改掉，不用每期再搜一遍。</p>
+    <p class="thin">左边填转写里错的那个词，右边填正确的字。右边留空＝把这个词删掉。</p>
+    <div class="tgrid">
+      <div class="thead">
+        <span>转写里出现</span><span></span><span>改成</span><span></span>
+      </div>
+      <div id="termTbl"></div>
+      <button class="tadd" type="button" onclick="addTermRow('', '', true)">+ 再加一条</button>
+    </div>
+    <label class="chk" style="margin:14px 0 0">
+      <input type="checkbox" id="termAuto" ${r.auto ? 'checked' : ''}>
+      <span>转写完成后自动套用<em>关掉就只在你点「按术语表改一遍」时改</em></span>
+    </label>
+    <p style="text-align:right;margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      ${sel >= 0 ? '<button class="btn btn-ghost" style="margin-left:8px" onclick="saveTerms(true)">保存并改这份</button>' : ''}
+      <button class="btn btn-main" style="flex:0 0 auto;margin-left:8px;padding:0 18px"
+              onclick="saveTerms(false)">保存</button>
+    </p>`);
+  pairs.forEach(p => addTermRow(p[0], p[1]));
+  addTermRow('', '');          // 末尾空一行，接着就能填
+  markTermEmpty();
+}
+async function saveTerms(applyNow){
+  const rows = Array.from(document.querySelectorAll('#termTbl .trow'));
+  const pairs = [];
+  rows.forEach(tr => {
+    const [i1, i2] = tr.querySelectorAll('input');
+    let a = (i1.value || '').trim();
+    if (!a) return;
+    // 左栏里还带着箭头（手打的或粘进来的）→ 再拆一次，别让「李蛋→李诞」变成一个词
+    const sp = splitTerm(a);
+    let left = a, right = (i2.value || '').trim();
+    if (sp[1] !== null){ left = sp[0]; if (!right) right = sp[1]; }
+    if (!left || left === right) return;
+    pairs.push([left, right]);
+  });
+  const au = $('termAuto');
+  const r = await pywebview.api.terms_set_pairs(pairs, au ? au.checked : true, termComments);
+  closeModal();
+  let msg = (r && r.n) ? `术语表存了 ${r.n} 条` : '术语表已清空';
+  if (applyNow && r && r.n && sel >= 0){
+    const a = await pywebview.api.apply_terms(sel);
+    if (a && a.ok){ await select(sel); msg = a.msg; }
+    else msg += ' · ' + ((a && a.msg) || '没改成');
+  }
+  $('fstate').textContent = msg;
+}
+async function applyTerms(){
+  $('dd').classList.remove('on');
+  if (sel < 0) return;
+  const r = await pywebview.api.apply_terms(sel);
+  if (r && r.ok){ await select(sel); $('fstate').textContent = r.msg; }
+  else $('fstate').textContent = (r && r.msg) || '没改成';
+}
+
+/* ---------- 没导出的草稿 ---------- */
+let draftCache = [];
+async function refreshDrafts(){
+  let list = [];
+  try { list = (await pywebview.api.drafts()) || []; } catch(e){ list = []; }
+  draftCache = list.filter(d => !d.exported);
+  $('draftN').textContent = draftCache.length;
+  $('draftBar').hidden = !draftCache.length;
+}
+function fmtWhen(ts){
+  const d = new Date((ts || 0) * 1000), n = new Date();
+  const hm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  return d.toDateString() === n.toDateString()
+    ? '今天 ' + hm : `${d.getMonth()+1}月${d.getDate()}日 ${hm}`;
+}
+async function showDrafts(){
+  if (!draftCache.length) await refreshDrafts();
+  if (!draftCache.length){ $('fstate').textContent = '没有没导出的稿子'; return; }
+  const rows = draftCache.map(d => `
+    <li>
+      <span class="nm2" title="${esc(d.name)}">${esc(d.name)}${d.alive ? '' : '　<span class="k">源文件已不在原位</span>'}</span>
+      <span class="k">${d.n} 句 · ${fmtWhen(d.saved_at)}</span>
+      <button onclick="restoreDraft('${d.key}')">接着改</button>
+      <button class="dg" onclick="dropDraft('${d.key}')">删</button>
+    </li>`).join('');
+  openModal('没导出的稿子', `
+    <p>这些是改过、但还没导出的稿子。关程序时自动存在本机，不上传、不进源文件夹。</p>
+    <ul class="dlist">${rows}</ul>
+    <p class="thin" style="margin-top:12px">删了就找不回来。导出过的稿子不会出现在这里。</p>`);
+}
+async function restoreDraft(key){
+  const r = await pywebview.api.restore_draft(key);
+  if (!r || !r.ok){ $('fstate').textContent = (r && r.msg) || '恢复失败'; return; }
+  closeModal();
+  await refreshDrafts();
+  await select(r.idx);
+  $('fstate').textContent = `已接着上次的稿子：${r.name}（${r.n} 句）`;
+}
+async function dropDraft(key){
+  await pywebview.api.drop_draft(key);
+  await refreshDrafts();
+  closeModal();
+  $('fstate').textContent = '已删掉这份草稿';
+  if (draftCache.length) showDrafts();
+}
+async function doExportAll(){
+  $('dd').classList.remove('on');
+  let k = 'txt';
+  try { k = localStorage.getItem('yz.lastKind') || 'txt'; } catch(e){}
+  const r = await pywebview.api.export_all(k);
+  $('fstate').textContent = (r && r.msg) || '已取消';
+  if (r && r.ok) await refreshDrafts();
+}
+
 async function copyAll(){
   if (sel < 0) return;
   await pywebview.api.copy_text(sel);
@@ -669,11 +1125,28 @@ const HELP_HTML = `
   <li>那句是噪声、语气词？<b>把字清空</b>再回车 = 删掉这一句</li>
   <li>改错了按 <code>Ctrl+Z</code> 撤销，能一路退回去</li>
   <li>顶部搜索框输个错字，<b>回车跳下一处</b>，命中句会标出来</li>
+  <li>同一个错字出现很多次：点搜索框右边的<b>「替」</b>，填上正确的词，「全部替换」一次改完；<b>Ctrl+Z 整批退回</b>。替换框留空 = 把这几个字删掉，删空了的句子会整句去掉</li>
+  <li>点「导出」前会先扫一遍，只挑<b>根本没人说过的</b>东西：整句只剩标点、把「（音乐）（掌声）」写进正文、同一段被识别两遍（两句时间戳重叠才算）。<b>不想改也能照样导出</b>，一句问题都没有就不打扰你</li>
+  <li><b>句子长短、口吃、拖音、一个词连说三遍、绕回来又讲一遍，都是原声，不会提醒你改</b>——稿子要能证明「他当时就是这么说的」</li>
 </ul>
 <h4>区分了说话人之后</h4>
 <ul>
   <li>稿子里每个人前面会有「说话人 1 / 2」的小标题</li>
   <li><b>点那个小标题就能改名</b>，换成「主持人」「嘉宾」这类真实称呼，导出时一并带上</li>
+</ul>
+<h4>术语表：错一次，以后都不用手改</h4>
+<ul>
+  <li>右上角<b>「术语表」</b>，左边填转写里错的词，右边填正确的——<b>不用敲箭头</b>，右栏留空＝删掉这个词</li>
+  <li>更省事：在稿子上用<b>「替」</b>改对之后，勾上替换条里的<b>「记住」</b>，这条替换就自动进表了</li>
+  <li>默认<b>转完自动套用</b>，状态栏会写「术语 3 处」；改错了 <code>Ctrl+Z</code> 整批退回</li>
+  <li>同一个主播的人名、栏目名、公司名，写一次，往后每一期都省掉这一段</li>
+  <li>不想自动改就把勾去掉，之后在「导出」菜单里点<b>「按术语表改一遍」</b></li>
+</ul>
+<h4>稿子不会丢</h4>
+<ul>
+  <li>转完、改完都会在本机存一份草稿，<b>直接关程序也不丢</b></li>
+  <li>下次打开，左栏出现「有 N 份没导出的稿子」，点一下接着改</li>
+  <li>草稿存在 <code>%LOCALAPPDATA%\\YanZha\\drafts</code>，不上传、不放进源文件夹；导出过的就不再提醒</li>
 </ul>
 <h4>支持什么</h4>
 <p>音频 <code>mp3 m4a wav flac aac ogg opus wma</code>；视频 <code>mp4 mkv mov avi flv webm ts m4v</code>。视频只取音轨，画面不用管。</p>
@@ -690,7 +1163,7 @@ const HELP_HTML = `
 <h4>要注意</h4>
 <ul>
   <li>速度大约 <b>1 小时音频 3 分钟</b>，取决于机器</li>
-  <li>转写结果是机器听出来的，<span class="warn">人名、数字、专业词容易错</span>，重要内容请人工核对</li>
+  <li>转写结果是机器听出来的，<span class="warn">人名、数字、专业词容易错</span>，重要内容请人工核对；同一批录音反复出现的那几个词，写进<b>术语表</b>就不用每次改</li>
   <li>导出的 txt / md / Word 末尾都会自动带一句同样的提醒，转发给别人时也说得清</li>
   <li>全程在本机跑，不联网；断网、拔网线都不影响</li>
   <li>日志在 <code>%LOCALAPPDATA%\\YanZha\\yanzha.log</code>，出问题可以发给作者</li>
@@ -759,6 +1232,8 @@ async function boot(){
       $('spk').checked = info.speaker_on !== false;
     }
     renderList([]);
+    markLastKind();
+    refreshDrafts();
     if (info.first) openModal('关于言札', ABOUT_HTML);
     booted = true;
   } finally {
