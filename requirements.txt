@@ -1,0 +1,23 @@
+# 言札 · YanZha —— 运行时依赖
+#
+# Windows 发行包不需要装这些：zip 里已经带了 Python 运行时与全部依赖，
+# 解压双击 YanZha.exe 就能用。
+#
+# 只有从源码跑（含 macOS / Linux）才需要：
+#     python -m pip install -r requirements.txt
+#
+# 打包成 exe 时另需：
+#     python -m pip install pyinstaller
+#
+# 实测通过的版本（2026-11，Python 3.12.10 / Windows 11 x64）：
+#     pywebview 6.2.1 · sherpa-onnx 2.0.1 · numpy 2.4.4 · python-docx 1.2.0
+# 下面只给下界，让其他系统能装上各自平台的官方 wheel。
+#
+# Linux 还要显式选窗口后端（GTK 或 QT），否则 pywebview 启动时报没有可用后端：
+#     python -m pip install "pywebview[gtk]"
+#     sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+
+pywebview>=5.0
+sherpa-onnx>=1.10.20
+numpy>=1.24
+python-docx>=1.1
