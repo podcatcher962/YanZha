@@ -5,9 +5,62 @@
 <title>言札</title>
 <style>
   :root{
-    --bg:#1b1c1f; --panel:#232529; --panel2:#282b30; --line:#33363c;
-    --tx:#e8e6e3; --tx2:#9aa0a6; --tx3:#6e747b;
-    --acc:#d9a441; --acc2:#e8b65a; --ok:#4caf7d; --err:#e0645c; --run:#5b9bd5;
+    /* 底色与文字。--tx3 以前是 #6e747b，在 #1b1c1f 上对比度只有 3.2:1，
+       时间码、状态行这些"次要但必须看得清"的东西发灰 —— 这次一起提亮。 */
+    --bg:#1b1c1f; --panel:#232529; --panel2:#282b30;
+    --line:var(--btn2); --line2:var(--line2); --line3:#41454d;
+    --tx:#e8e6e3; --tx2:#a8aeb5; --tx3:#8b9199;
+    /* 强调色 */
+    --acc:#d9a441; --acc2:#e8b65a; --on-acc:var(--on-acc);
+    --acc-bg:#2c2a24; --acc-line:#4d4330;
+    --ok:#4caf7d; --err:#e0645c; --run:#5b9bd5; --warn:#d9a441;
+    --ok-line:rgba(76,175,125,.35); --ok-bg:rgba(76,175,125,.08);
+    /* 输入类控件 */
+    --field:var(--field); --field2:#24262b; --field3:#212328;
+    --field-line:var(--field-line); --field-ph:#5b6069;
+    --search:#212327; --pop:#32353b; --hit:#282c33; --cur:#31353d;
+    --bar:var(--bar); --btn2:var(--btn2); --btn2-h:#3f434a;
+    --dis-bg:#4a4232; --dis-tx:#8a7f6b;
+    --danger-bg:#4a2f2f; --danger-tx:#e8a0a0;
+    --del-bg:var(--field-line); --sb:var(--field-line); --sb-h:var(--line2);
+    --spk-line:var(--field-line); --ren:#7d8087; --edit-bg:#191b1f; --code:#2a2d33;
+    --arrow:#6a6f78; --x2h:#e07a5f; --x2hb:#332a28; --tadd:#454952;
+    /* 草稿条 */
+    --draft-bg:#332e22; --draft-bg2:#3c3628; --draft-line:#4d4330;
+    --draft-tx:#dfc38a; --draft-tx2:#9d8b67;
+    /* 阴影与遮罩 */
+    --mask:rgba(8,9,11,.62);
+    --sh1:rgba(0,0,0,.5); --sh2:rgba(0,0,0,.45); --sh3:rgba(0,0,0,.55);
+    --mark:rgba(217,164,65,.28);
+    color-scheme:dark;      /* 让滚动条、下拉、原生控件跟着主题走 */
+  }
+  /* ---------- 亮色主题 ----------
+     不是把黑色刷成白色就完事：纸张底(#f6f3ec) + 纯白面板，边框用暖灰，
+     强调色从 #d9a441 压深到 #8a6109 —— 浅底上的金色不压深就看不清
+     （对比度 2.2:1 → 5.1:1）。所有颜色都走变量，切主题只切这一块。 */
+  html.light{
+    --bg:#f6f3ec; --panel:#fffefb; --panel2:#f3f0e8;
+    --line:#e0dbd0; --line2:#c8c2b4; --line3:#d5cfc2;
+    --tx:#221f1a; --tx2:#4e4a43; --tx3:#6f6a62;
+    --acc:#8a6109; --acc2:#a47a13; --on-acc:#fffefb;
+    --acc-bg:#fbf3de; --acc-line:#e6d5ac;
+    --ok:#2e7d52; --err:#b23c33; --run:#2c6ba3; --warn:#8a6109;
+    --ok-line:rgba(46,125,82,.35); --ok-bg:rgba(46,125,82,.08);
+    --field:#fbfaf6; --field2:#fbfaf6; --field3:#f7f5ef;
+    --field-line:#d9d3c6; --field-ph:#a5a098;
+    --search:#f8f5ef; --pop:#eeeae1; --hit:#fbf1d8; --cur:#f6ecd2;
+    --bar:#e6e2d8; --btn2:#ece8df; --btn2-h:#e2ded4;
+    --dis-bg:#e9e3d4; --dis-tx:#a9a08d;
+    --danger-bg:#f8e6e2; --danger-tx:#a53c2c;
+    --del-bg:#ece8de; --sb:#d3cdc0; --sb-h:#b9b2a3;
+    --spk-line:#e2ddd1; --ren:#8f8a81; --edit-bg:#fffdf7; --code:#efece3;
+    --arrow:#96918a; --x2h:#b23c33; --x2hb:#f7e5e1; --tadd:#cdc7ba;
+    --draft-bg:#fdf6e4; --draft-bg2:#fbf0d3; --draft-line:#e9dab3;
+    --draft-tx:#8a6618; --draft-tx2:#a38f60;
+    --mask:rgba(45,40,32,.34);
+    --sh1:rgba(70,62,48,.16); --sh2:rgba(70,62,48,.12); --sh3:rgba(70,62,48,.20);
+    --mark:rgba(191,143,37,.30);
+    color-scheme:light;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{height:100%; overflow:hidden;}
@@ -27,15 +80,15 @@
   .sub{font-size:11.5px; color:var(--tx3); letter-spacing:.5px; padding-top:3px;}
   .grow{flex:1;}
   .badge{
-    font-size:11px; color:var(--ok); border:1px solid rgba(76,175,125,.35);
-    background:rgba(76,175,125,.08); padding:3px 10px; border-radius:20px;
+    font-size:11px; color:var(--ok); border:1px solid var(--ok-line);
+    background:var(--ok-bg); padding:3px 10px; border-radius:20px;
   }
   .menu-btn{
     background:transparent; border:1px solid var(--line); color:var(--tx2);
     padding:6px 12px; border-radius:7px; cursor:pointer; font-size:12.5px;
     font-family:inherit; transition:.15s;
   }
-  .menu-btn:hover{color:var(--tx); border-color:#4a4e56;}
+  .menu-btn:hover{color:var(--tx); border-color:var(--line2);}
   /* ---------- 主体 ---------- */
   main{display:flex; flex:1 1 auto; min-height:0;}
   .left{
@@ -47,11 +100,11 @@
     border:none; border-radius:8px; cursor:pointer; font-family:inherit;
     font-size:13px; padding:9px 14px; transition:.15s; white-space:nowrap;
   }
-  .btn-main{background:var(--acc); color:#1a1710; font-weight:600; flex:1;}
+  .btn-main{background:var(--acc); color:var(--on-acc); font-weight:600; flex:1;}
   .btn-main:hover{background:var(--acc2);}
-  .btn-main:disabled{background:#4a4232; color:#8a7f6b; cursor:not-allowed;}
+  .btn-main:disabled{background:var(--dis-bg); color:var(--dis-tx); cursor:not-allowed;}
   .btn-ghost{background:transparent; color:var(--tx2); border:1px solid var(--line);}
-  .btn-ghost:hover{color:var(--tx); border-color:#4a4e56;}
+  .btn-ghost:hover{color:var(--tx); border-color:var(--line2);}
   .btn-ghost:disabled{opacity:.4; cursor:not-allowed;}
   .list{flex:1; overflow-y:auto; padding:4px 12px 12px; display:flex; flex-direction:column;}
   .empty{
@@ -64,8 +117,8 @@
     padding:10px 12px; margin-bottom:8px; cursor:pointer; transition:.15s;
     position:relative;
   }
-  .item:hover{border-color:#41454d;}
-  .item.sel{border-color:var(--acc); background:#2c2a24;}
+  .item:hover{border-color:var(--line3);}
+  .item.sel{border-color:var(--acc); background:var(--acc-bg);}
   .item.done .nm::before{content:""; display:inline-block; width:6px; height:6px;
     border-radius:50%; background:var(--ok); margin-right:7px; vertical-align:middle;}
   .item.error .nm::before{content:""; display:inline-block; width:6px; height:6px;
@@ -78,7 +131,7 @@
       white-space:nowrap; padding-right:22px;}
   .meta{font-size:11px; color:var(--tx3); margin-top:3px; display:flex; gap:10px;}
   .meta .err{color:var(--err);}
-  .bar{height:3px; background:#31343a; border-radius:2px; margin-top:8px; overflow:hidden;}
+  .bar{height:3px; background:var(--bar); border-radius:2px; margin-top:8px; overflow:hidden;}
   .bar i{display:block; height:100%; width:0; background:var(--acc); transition:width .25s;}
   .item.done .bar i{background:var(--ok);}
   .item.error .bar i{background:var(--err);}
@@ -88,7 +141,7 @@
     opacity:0; transition:.15s;
   }
   .item:hover .del{opacity:1;}
-  .del:hover{background:#3a3d44; color:var(--err);}
+  .del:hover{background:var(--del-bg); color:var(--err);}
   .left-bottom{padding:12px 16px; border-top:1px solid var(--line);}
   .chk{
     display:flex; align-items:center; gap:8px; margin-bottom:10px;
@@ -96,12 +149,12 @@
   }
   .chk input{
     appearance:none; width:16px; height:16px; flex:0 0 16px; border-radius:4px;
-    border:1px solid #4a4e56; background:#26282d; cursor:pointer; position:relative;
+    border:1px solid var(--line2); background:var(--field); cursor:pointer; position:relative;
   }
   .chk input:checked{background:var(--acc); border-color:var(--acc);}
   .chk input:checked::after{
     content:''; position:absolute; left:5px; top:1.5px; width:4px; height:8px;
-    border:solid #1a1710; border-width:0 2px 2px 0; transform:rotate(42deg);
+    border:solid var(--on-acc); border-width:0 2px 2px 0; transform:rotate(42deg);
   }
   .chk em{color:var(--tx3); font-style:normal; font-size:11px; margin-left:6px;}
   .chk.off{opacity:.45; pointer-events:none;}
@@ -109,11 +162,11 @@
   /* 没导出的草稿：程序关过一次，回来还能接着改 */
   .draftbar{
     margin:0 16px 9px; padding:9px 12px; border-radius:8px; cursor:pointer;
-    background:#332e22; border:1px solid #4d4330; color:#dfc38a;
+    background:var(--draft-bg); border:1px solid var(--draft-line); color:var(--draft-tx);
     font-size:12px; display:flex; align-items:center; gap:8px;
   }
-  .draftbar:hover{background:#3c3628;}
-  .draftbar em{font-style:normal; color:#9d8b67; font-size:11px; margin-left:auto;}
+  .draftbar:hover{background:var(--draft-bg2);}
+  .draftbar em{font-style:normal; color:var(--draft-tx2); font-size:11px; margin-left:auto;}
   .draftbar[hidden]{display:none;}
   .dlist{margin:0; padding:0; list-style:none;}
   .dlist li{display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line);}
@@ -121,11 +174,11 @@
   .dlist .nm2{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px;}
   .dlist .k{font-size:11px; color:var(--tx3); white-space:nowrap;}
   .dlist button{
-    background:#33363c; border:none; color:var(--tx2); border-radius:6px;
+    background:var(--btn2); border:none; color:var(--tx2); border-radius:6px;
     padding:5px 10px; font-size:11.5px; cursor:pointer; font-family:inherit;
   }
-  .dlist button:hover{background:#3f434a; color:var(--tx);}
-  .dlist button.dg:hover{background:#4a2f2f; color:#e8a0a0;}
+  .dlist button:hover{background:var(--btn2-h); color:var(--tx);}
+  .dlist button.dg:hover{background:var(--danger-bg); color:var(--danger-tx);}
   .hint{font-size:11px; color:var(--tx3); text-align:center; margin-top:8px;}
   /* ---------- 右栏 ---------- */
   .right{flex:1; display:flex; flex-direction:column; min-width:0;}
@@ -136,7 +189,7 @@
   .rtitle{font-size:12.5px; color:var(--tx2);}
   .search{
     display:flex; align-items:center; gap:7px; margin-left:16px; height:28px;
-    background:#212327; border:1px solid var(--line); border-radius:7px; padding:0 10px;
+    background:var(--search); border:1px solid var(--line); border-radius:7px; padding:0 10px;
     position:relative;
   }
   .search input{
@@ -157,20 +210,20 @@
     position:absolute; left:-10px; top:34px; z-index:30; display:none;
     align-items:center; gap:7px; padding:9px;
     background:var(--panel2); border:1px solid var(--line); border-radius:9px;
-    box-shadow:0 10px 26px rgba(0,0,0,.5);
+    box-shadow:0 10px 26px var(--sh1);
   }
   .repbox.on{display:flex;}
   .repbox input{
-    background:#26282d; border:1px solid #3a3d44; border-radius:6px; color:var(--tx);
+    background:var(--field); border:1px solid var(--field-line); border-radius:6px; color:var(--tx);
     font-family:inherit; font-size:12.5px; padding:5px 9px; width:186px; outline:none;
   }
   .repbox input:focus{border-color:var(--acc);}
   .repbox .k{
-    background:#26282d; border:1px solid var(--line); border-radius:6px; color:var(--tx2);
+    background:var(--field); border:1px solid var(--line); border-radius:6px; color:var(--tx2);
     font-family:inherit; font-size:12px; padding:5px 11px; cursor:pointer; white-space:nowrap;
   }
-  .repbox .k:hover{color:var(--tx); border-color:#4a4e56;}
-  .repbox .k.p{background:var(--acc); border-color:var(--acc); color:#1a1710; font-weight:600;}
+  .repbox .k:hover{color:var(--tx); border-color:var(--line2);}
+  .repbox .k.p{background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:600;}
   .repbox .k.p:hover{background:var(--acc2);}
   /* 「记住这条」：勾上就把这次替换存进术语表，下期不用再改 */
   .repbox .rkeep{
@@ -181,13 +234,13 @@
   .repbox .rkeep:hover{color:var(--tx2);}
   .repbox .rkeep input{
     appearance:none; -webkit-appearance:none; flex:0 0 14px; width:14px; height:14px;
-    min-width:14px; border-radius:3px; border:1px solid #4a4e56; background:#26282d;
+    min-width:14px; border-radius:3px; border:1px solid var(--line2); background:var(--field);
     cursor:pointer; position:relative; padding:0; margin:0;
   }
   .repbox .rkeep input:checked{background:var(--acc); border-color:var(--acc);}
   .repbox .rkeep input:checked::after{
     content:''; position:absolute; left:4px; top:1px; width:3px; height:7px;
-    border:solid #1a1710; border-width:0 2px 2px 0; transform:rotate(42deg);
+    border:solid var(--on-acc); border-width:0 2px 2px 0; transform:rotate(42deg);
   }
   ul.audit{margin:10px 0 0; padding-left:20px;}
   ul.audit li{margin-bottom:11px; line-height:1.7;}
@@ -197,7 +250,7 @@
   .dd{
     position:absolute; right:0; top:32px; background:var(--panel2);
     border:1px solid var(--line); border-radius:9px; padding:5px;
-    min-width:158px; display:none; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,.45);
+    min-width:158px; display:none; z-index:20; box-shadow:0 8px 24px var(--sh2);
   }
   .dd.on{display:block;}
   .dd-sep{height:1px; background:var(--line); margin:5px 8px;}
@@ -206,17 +259,17 @@
     color:var(--tx2); padding:8px 12px; border-radius:6px; cursor:pointer;
     font-size:12.5px; font-family:inherit;
   }
-  .dd button:hover{background:#32353b; color:var(--tx);}
+  .dd button:hover{background:var(--pop); color:var(--tx);}
   .result{flex:1; overflow-y:auto; padding:8px 20px 40px;}
   .result.rep-on{padding-top:52px;}    /* 替换条展开时把内容让开，别盖住第一句 */
-  .spkblock{margin-bottom:6px; padding-left:2px; border-left:2px solid #3a3d44; padding-top:2px;}
+  .spkblock{margin-bottom:6px; padding-left:2px; border-left:2px solid var(--field-line); padding-top:2px;}
   .spkname{
     font-size:11px; color:var(--acc); font-weight:600; letter-spacing:.4px;
     padding:6px 0 2px 10px; user-select:none; cursor:pointer;
   }
   .spkname:hover{text-decoration:underline;}
   .spkname .ren{
-    font-weight:400; color:#7d8087; margin-left:6px; font-size:10px;
+    font-weight:400; color:var(--ren); margin-left:6px; font-size:10px;
     opacity:0; transition:.12s;
   }
   .spkname:hover .ren{opacity:1;}
@@ -231,12 +284,12 @@
   .sent .x{font-size:14.5px; line-height:1.95; color:var(--tx); user-select:text;
            letter-spacing:.2px; flex:1;}
   /* 正在播这一句：左侧亮一条 */
-  .sent.playing{background:#2c2a24; box-shadow:inset 3px 0 0 var(--acc);}
+  .sent.playing{background:var(--acc-bg); box-shadow:inset 3px 0 0 var(--acc);}
   .sent.playing .t{color:var(--acc);}
   /* 搜索命中 / 当前命中 */
-  .sent.hit{background:#282c33;}
-  .sent.cur{background:#31353d; box-shadow:inset 3px 0 0 var(--run);}
-  .sent.hit .x b{background:rgba(217,164,65,.28); border-radius:3px; padding:0 1px;
+  .sent.hit{background:var(--hit);}
+  .sent.cur{background:var(--cur); box-shadow:inset 3px 0 0 var(--run);}
+  .sent.hit .x b{background:var(--mark); border-radius:3px; padding:0 1px;
                  color:var(--acc2); font-weight:inherit;}
   .pen{
     position:absolute; right:8px; top:7px; font-size:10.5px; color:var(--tx3);
@@ -246,7 +299,7 @@
   .sent:hover .pen{opacity:1;}
   .pen:hover{color:var(--acc); border-color:var(--acc);}
   .editbox{
-    flex:1; background:#191b1f; border:1px solid var(--acc); border-radius:7px;
+    flex:1; background:var(--edit-bg); border:1px solid var(--acc); border-radius:7px;
     color:var(--tx); font-family:inherit; font-size:14.5px; line-height:1.9;
     padding:4px 9px; outline:none; resize:none; min-height:32px; overflow:hidden;
   }
@@ -268,20 +321,37 @@
   .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:6px;}
   /* 滚动条 */
   ::-webkit-scrollbar{width:9px;}
-  ::-webkit-scrollbar-thumb{background:#3a3d44; border-radius:5px;}
-  ::-webkit-scrollbar-thumb:hover{background:#4a4e56;}
+  ::-webkit-scrollbar-thumb{background:var(--sb); border-radius:5px;}
+  ::-webkit-scrollbar-thumb:hover{background:var(--sb-h);}
   ::-webkit-scrollbar-track{background:transparent;}
 
+  /* 语种 / 人数：两个小下拉挤一行，不占地方 */
+  .opts{display:flex; gap:8px; margin-bottom:10px;}
+  .opts label{flex:1; min-width:0; display:flex; align-items:center; gap:6px;
+    font-size:11.5px; color:var(--tx3);}
+  .opts select{
+    flex:1; min-width:0; appearance:none; -webkit-appearance:none; cursor:pointer;
+    background:var(--field); color:var(--tx); border:1px solid var(--line);
+    border-radius:6px; padding:4px 18px 4px 7px; font-family:inherit; font-size:11.5px;
+    outline:none;
+    background-image:linear-gradient(45deg,transparent 50%,var(--tx3) 50%),linear-gradient(135deg,var(--tx3) 50%,transparent 50%);
+    background-position:calc(100% - 10px) 52%, calc(100% - 6px) 52%;
+    background-size:4px 4px, 4px 4px; background-repeat:no-repeat;
+  }
+  .opts select:hover{border-color:var(--line2);}
+  .opts select:focus{border-color:var(--acc);}
+  .opts select option{background:var(--panel); color:var(--tx);}
+  .opts label.off{opacity:.45; pointer-events:none;}
   /* ---------- 弹窗 ---------- */
   .mask{
-    position:fixed; inset:0; background:rgba(8,9,11,.62); display:none;
+    position:fixed; inset:0; background:var(--mask); display:none;
     align-items:center; justify-content:center; z-index:60; backdrop-filter:blur(2px);
   }
   .mask.on{display:flex;}
   .modal{
     width:620px; max-width:calc(100vw - 80px); max-height:calc(100vh - 100px);
     background:var(--panel); border:1px solid var(--line); border-radius:14px;
-    display:flex; flex-direction:column; box-shadow:0 24px 60px rgba(0,0,0,.55);
+    display:flex; flex-direction:column; box-shadow:0 24px 60px var(--sh3);
   }
   .mhead{
     display:flex; align-items:center; padding:16px 20px 12px;
@@ -291,24 +361,24 @@
     margin-left:auto; background:transparent; border:none; color:var(--tx3);
     font-size:19px; line-height:1; cursor:pointer; padding:2px 6px; border-radius:6px;
   }
-  .mx:hover{background:#31343a; color:var(--tx);}
+  .mx:hover{background:var(--del-bg); color:var(--tx);}
   .mbody{padding:16px 20px 20px; overflow-y:auto; font-size:12.5px; line-height:1.85; color:var(--tx2);}
   .mbody h4{margin:14px 0 6px; color:var(--tx); font-size:12.5px; font-weight:600;}
   .mbody h4:first-child{margin-top:0;}
   .mbody p{margin:0 0 8px;}
   .mbody ul{margin:0 0 8px; padding-left:18px;}
   .mbody li{margin-bottom:5px;}
-  .mbody code{background:#2a2d33; padding:1px 5px; border-radius:4px; color:var(--acc); font-size:11.5px;}
-  .mbody .warn{color:#d9a441;}
+  .mbody code{background:var(--code); padding:1px 5px; border-radius:4px; color:var(--acc); font-size:11.5px;}
+  .mbody .warn{color:var(--warn);}
   .mbody .thin{color:var(--tx3); font-size:11.5px;}
   .mbody textarea{
-    width:100%; min-height:148px; resize:vertical; background:#24262b;
+    width:100%; min-height:148px; resize:vertical; background:var(--field2);
     color:var(--tx); border:1px solid var(--line); border-radius:8px;
     padding:10px 12px; font-family:inherit; font-size:12.5px; line-height:1.75;
     outline:none; box-sizing:border-box; display:block; margin-top:8px;
   }
   .mbody textarea:focus{border-color:var(--acc);}
-  .mbody textarea::placeholder{color:#5b6069;}
+  .mbody textarea::placeholder{color:var(--field-ph);}
   /* 术语表：左右两栏，用户不用敲箭头 */
   .tgrid{margin-top:10px;}
   .tgrid .thead,.tgrid .trow{
@@ -318,22 +388,22 @@
   .tgrid .thead{font-size:11px; color:var(--tx3); padding:0 0 7px 2px;}
   .tgrid .trow{margin-bottom:7px;}
   .tgrid input{
-    width:100%; box-sizing:border-box; background:#24262b; color:var(--tx);
+    width:100%; box-sizing:border-box; background:var(--field2); color:var(--tx);
     border:1px solid var(--line); border-radius:7px; padding:7px 10px;
     font-family:inherit; font-size:12.5px; outline:none; min-width:0;
   }
   .tgrid input:focus{border-color:var(--acc);}
-  .tgrid input::placeholder{color:#5b6069;}
-  .tgrid input.j{background:#212328;}
-  .tgrid .arw{text-align:center; color:#6a6f78; font-size:13px; user-select:none;}
+  .tgrid input::placeholder{color:var(--field-ph);}
+  .tgrid input.j{background:var(--field3);}
+  .tgrid .arw{text-align:center; color:var(--arrow); font-size:13px; user-select:none;}
   .tgrid .x2{
-    background:transparent; border:none; color:#6a6f78; cursor:pointer;
+    background:transparent; border:none; color:var(--arrow); cursor:pointer;
     font-size:16px; line-height:1; padding:3px 0; border-radius:5px; font-family:inherit;
   }
-  .tgrid .x2:hover{color:#e07a5f; background:#332a28;}
+  .tgrid .x2:hover{color:var(--x2h); background:var(--x2hb);}
   .tgrid .empty{color:var(--tx3); font-size:11.5px; padding:0 0 6px 2px;}
   .tadd{
-    margin-top:3px; background:transparent; border:1px dashed #454952; color:var(--tx2);
+    margin-top:3px; background:transparent; border:1px dashed var(--tadd); color:var(--tx2);
     border-radius:7px; padding:6px 13px; font-size:12px; cursor:pointer; font-family:inherit;
   }
   .tadd:hover{border-color:var(--acc); color:var(--acc);}
@@ -347,6 +417,7 @@
   <div class="sub">录音转文字 · 全程离线</div>
   <div class="grow"></div>
   <div class="badge" id="badge">模型就绪</div>
+  <button class="menu-btn" id="btnTheme" onclick="toggleTheme()" title="切换到亮色">☀ 亮色</button>
   <button class="menu-btn" onclick="terms()">术语表</button>
   <button class="menu-btn" onclick="help()">使用说明</button>
   <button class="menu-btn" onclick="about()">关于</button>
@@ -372,6 +443,26 @@
         <input type="checkbox" id="spk" checked onchange="setSpk(this.checked)">
         <span>区分说话人<em>多人播客/访谈</em></span>
       </label>
+      <div class="opts">
+        <label title="锁中文能挡掉中文录音里冒出来的日文、韩文">
+          <span>语种</span>
+          <select id="lang" onchange="setLang(this.value)">
+            <option value="zh">中文</option>
+            <option value="auto">自动 · 中英日韩粤</option>
+          </select>
+        </label>
+        <label id="nspkWrap" title="知道自己录的是几个人就选上，比自动判更准">
+          <span>人数</span>
+          <select id="nspk" onchange="setNspk(this.value)">
+            <option value="0">自动</option>
+            <option value="2">2 人</option>
+            <option value="3">3 人</option>
+            <option value="4">4 人</option>
+            <option value="5">5 人</option>
+            <option value="6">6 人</option>
+          </select>
+        </label>
+      </div>
       <button class="btn btn-main" id="btnStart" onclick="start()">开始转写</button>
       <div class="hint" id="hint">本机处理 · 录音不出这台电脑</div>
     </div>
@@ -443,7 +534,7 @@
 
 <script>
 let state = [], sel = -1, results = {}, busy = false, t0 = 0;
-const APP_VER = '0.5.0';
+const APP_VER = '0.6.0';
 
 const $ = id => document.getElementById(id);
 
@@ -482,7 +573,7 @@ function renderList(st){
     if (it.status==='error') meta.push(`<span class="err">${it.error||'失败'}</span>`);
     if (it.status==='wait') meta.push('待转写');
     d.innerHTML = `<div class="nm" title="${esc(it.name)}">${esc(it.name)}</div>
-      <div class="meta">${meta.join('<span style="color:#4a4e56">·</span>')}</div>
+      <div class="meta">${meta.join('<span style="color:var(--line2)">·</span>')}</div>
       <div class="bar"><i style="width:${it.status==='done'?100:pct}%"></i></div>
       <div class="del" onclick="event.stopPropagation();del(${it.idx})">×</div>`;
     box.appendChild(d);
@@ -538,8 +629,29 @@ function del(i){ pywebview.api.remove(i); }
 async function setSpk(on){
   const r = await pywebview.api.set_speaker(on);
   if (!r.on && on) { $('spk').checked = false; }
+  $('nspk').disabled = !r.on;
+  $('nspkWrap').classList.toggle('off', !r.on);
   $('fstate').textContent = r.on ? '会区分说话人（多跑一遍分离，稍慢）' : '不区分说话人';
 }
+/* ---------- 主题 ----------
+   亮色是给"屏幕太暗看不见"的人准备的，所以切换按钮就摆在顶栏，
+   点一下就换，选择存进设置，下次开机还是这个主题。 */
+function applyTheme(t){
+  const light = (t === 'light');
+  document.documentElement.classList.toggle('light', light);
+  const b = $('btnTheme');
+  if (b){
+    b.textContent = light ? '☾ 暗色' : '☀ 亮色';
+    b.title = light ? '切换到暗色' : '切换到亮色';
+  }
+}
+function toggleTheme(){
+  const light = !document.documentElement.classList.contains('light');
+  applyTheme(light ? 'light' : 'dark');
+  pywebview.api.set_theme(light ? 'light' : 'dark');
+}
+async function setLang(v){ await pywebview.api.set_lang(v); }
+async function setNspk(v){ await pywebview.api.set_nspk(v); }
 function clearAll(){
   sel = -1; results = {};
   $('result').innerHTML = `<div class="placeholder"><div class="big">言札</div>
@@ -602,8 +714,8 @@ function renameSpk(old){
     <p>把「${esc(label)}」换成你习惯的称呼，导出 txt / md / Word / 字幕时都会用新名字。</p>
     <p style="margin:14px 0 4px">
       <input id="spkin" value="${esc(label)}" maxlength="24"
-        style="width:100%;box-sizing:border-box;background:#26282d;border:1px solid #3a3d44;
-               color:#e6e8ea;padding:9px 11px;border-radius:7px;font-size:13px;outline:none">
+        style="width:100%;box-sizing:border-box;background:var(--field);border:1px solid var(--field-line);
+               color:var(--tx);padding:9px 11px;border-radius:7px;font-size:13px;outline:none">
     </p>
     <p class="thin">留空或取消就不改。名字只存在本次结果里，不动原文件。</p>
     <p style="text-align:right;margin-top:16px">
@@ -880,7 +992,7 @@ async function exportNow(k, a){
 function showAudit(a, k){
   const rows = a.items.slice(0, 4).map(x => {
     const extra = x.hint ? `　<span class="thin">${esc(x.hint)}</span>` : '';
-    return `<li><b>第 ${x.si + 1} 句</b>　<span style="color:#e0a54f">${AUDIT_LABEL[x.kind] || x.kind}</span>${extra}
+    return `<li><b>第 ${x.si + 1} 句</b>　<span style="color:var(--acc2)">${AUDIT_LABEL[x.kind] || x.kind}</span>${extra}
        <br><span class="thin">${esc(x.text)}</span></li>`;
   }).join('');
   openModal('导出前检查', `
@@ -1129,6 +1241,21 @@ const HELP_HTML = `
   <li>点「导出」前会先扫一遍，只挑<b>根本没人说过的</b>东西：整句只剩标点、把「（音乐）（掌声）」写进正文、同一段被识别两遍（两句时间戳重叠才算）。<b>不想改也能照样导出</b>，一句问题都没有就不打扰你</li>
   <li><b>句子长短、口吃、拖音、一个词连说三遍、绕回来又讲一遍，都是原声，不会提醒你改</b>——稿子要能证明「他当时就是这么说的」</li>
 </ul>
+<h4>人多的时候：把人数选上</h4>
+<ul>
+  <li>左下角<b>「人数」</b>默认自动。自动分人最常见的毛病是「明明四五个人，只分出两个」，两层原因：
+      远场录音里不同人的声纹会互相靠拢；声音小的人还可能整段被判成静音、根本没进稿子
+      （这一版已把判断门槛调低，轻的声音也能捞回来）。你清楚知道自己录的是几个人，
+      就选上（2~6 人），<b>按人数硬分，比任何自动判据都准</b></li>
+  <li>已经转好的稿子，改一下人数再点「开始转写」，<b>只重跑分人</b>（几秒），不会重新识别</li>
+  <li>自动分人还有一个取舍：宁可多分一个人，也不把两个人糊成一个。糊在一起是改不回来的，
+      多分出来的人点一下就能改名</li>
+</ul>
+<h4>嫌界面黑：右上角切亮色</h4>
+<ul>
+  <li>顶栏的<b>「☀ 亮色／☾ 暗色」</b>一点就换，选择记在本机，下次打开还是这个</li>
+  <li>亮色是纸白底加深字，白天、投影、屏幕偏暗的笔记本上更好认</li>
+</ul>
 <h4>区分了说话人之后</h4>
 <ul>
   <li>稿子里每个人前面会有「说话人 1 / 2」的小标题</li>
@@ -1150,7 +1277,7 @@ const HELP_HTML = `
 </ul>
 <h4>支持什么</h4>
 <p>音频 <code>mp3 m4a wav flac aac ogg opus wma</code>；视频 <code>mp4 mkv mov avi flv webm ts m4v</code>。视频只取音轨，画面不用管。</p>
-<p>语种<b>中文、English、日本語、한국어、粤语</b>，不用选，模型自己判断；一段话里中英混说也认。</p>
+<p><b>语种默认锁「中文」</b>。中文录音在底噪、笑声、远场混响这些「不太像话」的片段上，模型容易猜成日文或韩文。锁上以后整份文件按中文解码，残留的假名、谚文直接清掉；中英混说的英文照样认。录的是外语、或者真要日韩语混说，把左下角「语种」切到<b>自动 · 中英日韩粤</b>。</p>
 <h4>导出格式</h4>
 <ul>
   <li><b>.txt</b> 干净稿，按段落分好，直接贴</li>
@@ -1231,6 +1358,12 @@ async function boot(){
     } else {
       $('spk').checked = info.speaker_on !== false;
     }
+    applyTheme(info.theme || 'dark');
+    if (info.lang) $('lang').value = info.lang;
+    if (info.nspk !== undefined && info.nspk !== null) $('nspk').value = String(info.nspk);
+    const spkOn = $('spk').checked;
+    $('nspk').disabled = !spkOn;
+    $('nspkWrap').classList.toggle('off', !spkOn);
     renderList([]);
     markLastKind();
     refreshDrafts();

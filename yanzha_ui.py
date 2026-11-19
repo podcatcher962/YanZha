@@ -50,7 +50,7 @@ def _init_log():
 
 
 APP_TITLE = '言札'
-VERSION = '0.5.0'
+VERSION = '0.6.0'
 
 
 _init_log()
@@ -320,6 +320,14 @@ class Api:
         self._worker = None
         self._running = False
         self._speaker_on = self._engine.has_speaker_model()
+        st = load_settings()
+        # 语种与人数存过就照上次来；语种默认锁中文（中文录音里会冒日文/韩文）
+        self._engine.lang_pref = 'auto' if st.get('lang') == 'auto' else 'zh'
+        try:
+            n = int(st.get('nspk') or 0)
+        except Exception:
+            n = 0
+        self._engine.n_speakers = n if 2 <= n <= 8 else 0
         self._clips = {}          # (path,start,dur) → data URI，重复听同一句不再调 ffmpeg
         self._undo = []           # 改字/删句的撤销栈
         self._batch_no = 0        # 「全部替换」的批次号，一次 Ctrl+Z 整批退回
@@ -344,6 +352,11 @@ class Api:
                  'speakers': len({s.speaker for s in it['sentences'] if s.speaker}),
                  'error': it['error']}
                 for i, it in enumerate(self._items)]
+
+    def _sig(self):
+        """这次的转写参数。转完存一份，参数没变就不用重跑。"""
+        return (self._speaker_on, self._engine.lang_pref,
+                self._engine.n_speakers)
 
     def _sync(self):
         self._push('renderList', self._state())
@@ -372,6 +385,9 @@ class Api:
                 'speaker_on': self._speaker_on,
                 'first': self.first_run()['first'],
                 'engine': self._engine.engine_name(),
+                'theme': 'light' if load_settings().get('theme') == 'light' else 'dark',
+                'lang': 'auto' if self._engine.lang_pref == 'auto' else 'zh',
+                'nspk': int(self._engine.n_speakers or 0),
                 'langs': ['中文', 'English', '日本語', '한국어', '粤语']
                           if self._engine.use_sv else ['中文']}
 
@@ -412,7 +428,8 @@ class Api:
                 'status': 'wait', 'progress': 0.0, 'msg': '',
                 'sentences': [], 'error': '',
                 'raw': [],            # 不带说话人的句子，改勾选时复用
-                'last_spk': None,     # 上次转写时的「区分说话人」取值
+                'sig': None,          # 上次转写用的参数组合（分人/语种/人数）
+                'lang': '',           # 上次锁的语种：语种变了只能重新识别
             })
             added.append(p)
         self._sync()
@@ -434,6 +451,46 @@ class Api:
         log.info('区分说话人：%s', self._speaker_on)
         return {'on': self._speaker_on}
 
+    # ---------------- 外观与识别参数（存设置，下次开机照旧）
+    def set_theme(self, v):
+        """亮色 / 暗色。只改界面，不碰识别。"""
+        v = 'light' if str(v) == 'light' else 'dark'
+        save_setting('theme', v)
+        log.info('主题：%s', v)
+        try:
+            _title_bar(APP_TITLE, v)
+        except Exception:
+            pass
+        return {'theme': v}
+
+    def set_lang(self, v):
+        """语种：'zh' 锁中文（默认） / 'auto' 交给模型自己判。
+
+        中文录音里冒出日语韩语，是模型在底噪/笑声这类片段上乱猜语种；
+        锁中文后只对可疑段用强制中文重认，正常段不动。
+        """
+        v = 'auto' if str(v) == 'auto' else 'zh'
+        save_setting('lang', v)
+        self._engine.lang_pref = v
+        log.info('语种：%s', v)
+        return {'lang': v}
+
+    def set_nspk(self, v):
+        """说话人数：0=自动，2~8=按人数硬分。
+
+        很多人清清楚楚知道自己录的是几个人，这条比任何自动判据都准 ——
+        自动分人最容易出的错就是「明明四五个人，只分出两个」。
+        """
+        try:
+            n = int(v)
+        except Exception:
+            n = 0
+        n = n if 2 <= n <= 8 else 0
+        save_setting('nspk', n)
+        self._engine.n_speakers = n
+        log.info('说话人数：%s', n or '自动')
+        return {'nspk': n}
+
     def start(self):
         if self._running:
             return {'ok': False, 'msg': '正在转写'}
@@ -442,7 +499,7 @@ class Api:
             if it['status'] == 'run':
                 continue
             # 已经转好的、参数又没变，就别重跑（改了说话人勾选才需要重来）
-            if it['status'] == 'done' and it.get('last_spk') == self._speaker_on:
+            if it['status'] == 'done' and it.get('sig') == self._sig():
                 continue
             todo.append(i)
         if not todo:
@@ -474,7 +531,7 @@ class Api:
                 self._push('onItemProgress', idx, p, msg)
 
             try:
-                reuse = bool(it.get('raw')) and it.get('last_spk') != self._speaker_on
+                reuse = bool(it.get('raw')) and it.get('lang') == self._engine.lang_pref
                 if reuse:
                     # 只有「区分说话人」变了：复用识别结果，只重跑分人
                     log.info('复用识别结果，只重跑分人：%s', it['name'])
@@ -486,7 +543,8 @@ class Api:
                 it['duration'] = res['duration']
                 if not res.get('canceled') and res['sentences']:
                     it['raw'] = [(s.start, s.end, s.text) for s in res['sentences']]
-                    it['last_spk'] = self._speaker_on
+                    it['sig'] = self._sig()
+                    it['lang'] = self._engine.lang_pref
                 if res.get('canceled'):
                     it['status'] = 'wait'
                     it['msg'] = '已停止'
@@ -507,6 +565,8 @@ class Api:
                     if lg and lg != 'zh':
                         extra += ' · ' + {'en': 'English', 'ja': '日本語',
                                           'ko': '한국어', 'yue': '粤语'}.get(lg, lg)
+                    if res.get('dropped'):
+                        extra += ' · 清掉 %d 处外语误字' % res['dropped']
                     # 术语表：用户自己声明过的错词，转完直接改掉，不用再搜一遍
                     if load_settings().get('terms_auto', True) and terms_text():
                         tr = self._apply_terms(i)
@@ -1157,33 +1217,85 @@ class Api:
             pass
 
 
-def _dark_titlebar(title):
-    """把 Windows 标题栏压成深色，跟界面一个调子（Win11/10 都吃这个）。"""
+def _find_main_window(title):
+    """找到真正的程序主窗。
+
+    FindWindowW(None, title) 在这里不可靠：同名的还有一个隐藏小窗
+    （实测 136×39），着色着到它身上，主窗毫无变化。改成枚举可见顶层窗口，
+    取同名里面积最大的那个。
+    """
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+    best = [0, 0]
+    CB = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+    def cb(hwnd, _):
+        try:
+            if not u.IsWindowVisible(hwnd):
+                return True
+            n = u.GetWindowTextLengthW(hwnd)
+            if n <= 0:
+                return True
+            buf = ctypes.create_unicode_buffer(n + 1)
+            u.GetWindowTextW(hwnd, buf, n + 1)
+            if buf.value != title:
+                return True
+            r = wintypes.RECT()
+            u.GetWindowRect(hwnd, ctypes.byref(r))
+            area = (r.right - r.left) * (r.bottom - r.top)
+            if area > best[1]:
+                best[0], best[1] = hwnd, area
+        except Exception:
+            pass
+        return True
+
+    try:
+        u.EnumWindows(CB(cb), 0)
+    except Exception:
+        return 0
+    return best[0]
+
+
+def _title_bar(title, theme='dark'):
+    """把 Windows 标题栏压成跟界面一个调子（Win11/10 都吃这个）。
+
+    暗色：标题栏深色 + 浅色字；亮色：标题栏浅色 + 深色字。
+    不这么做的时候，切到亮色界面会顶着一根黑标题栏，看着像没切干净。
+    """
     try:
         import ctypes
-        hwnd = ctypes.windll.user32.FindWindowW(None, title)
+        hwnd = _find_main_window(title)
         if not hwnd:
-            return
-        on = ctypes.c_int(1)
+            return False
+        light = (theme == 'light')
+        on = ctypes.c_int(0 if light else 1)          # 20 = 沉浸式深色标题栏
         ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(on), 4)
-        # 边框色 + 标题栏色（Win11）
-        for attr, rgb in ((34, 0x003C3633), (35, 0x00201C1B)):
+        border, caption, text = ((0x00D0CBC2, 0x00F6F3EC, 0x00221F1A) if light
+                                 else (0x003C3633, 0x00201C1B, 0x00E3E6E8))
+        for attr, rgb in ((34, border), (35, caption)):
             c = ctypes.c_int(rgb)
             ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(c), 4)
-        # 文字改成浅色
-        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 36, ctypes.byref(ctypes.c_int(0x00E3E6E8)), 4)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, 36, ctypes.byref(ctypes.c_int(text)), 4)   # 标题栏文字色
+        return True
     except Exception:
         pass
 
 
 def _after_start(api=None):
     import time as _t
-    for _ in range(6):
-        _t.sleep(0.25)
+    th = 'light' if load_settings().get('theme') == 'light' else 'dark'
+    # 冷启动要 2~3 秒才把窗口建出来，早几轮 FindWindow 必然落空。
+    # 原来只试 6 次 × 0.25 秒，正好全错过 —— 亮色界面上就顶着一根黑标题栏。
+    # 现在试到成功才停（最多约 12 秒），失败也只是标题栏不好看，不影响功能。
+    for _ in range(60):
         try:
-            _dark_titlebar(APP_TITLE)
+            if _title_bar(APP_TITLE, th):
+                break
         except Exception:
             pass
+        _t.sleep(0.2)
     # 把文件拖到 exe 图标上、或「右键 → 打开方式 → 言札」时，直接排进队列
     try:
         files = [p for p in sys.argv[1:] if os.path.isfile(p)]
@@ -1211,10 +1323,12 @@ def _diag(window):
 def main():
     api = Api()
     html = os.path.join(HERE, 'yanzha.html')
+    # 窗口底色跟主题走：亮色主题下开窗不再先闪一下黑
+    bg = '#f6f3ec' if load_settings().get('theme') == 'light' else '#1b1c1f'
     window = webview.create_window(
         APP_TITLE, url=html, js_api=api,
         width=1180, height=760, min_size=(900, 600),
-        background_color='#1b1c1f', text_select=True)
+        background_color=bg, text_select=True)
     api.bind(window)
     threading.Thread(target=_diag, args=(window,), daemon=True).start()
     webview.start(lambda: _after_start(api), debug=False)

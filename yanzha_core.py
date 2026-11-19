@@ -34,6 +34,44 @@ class _Canceled(Exception):
 _TO_FULL = {',': '，', '.': '。', '?': '？', '!': '！', ';': '；', ':': '：'}
 
 
+# ---------------------------------------------------------------- 语种
+# SenseVoice 自带一个语种判别头，language='auto' 时由它自己挑。
+# 问题在于：底噪、咳嗽、笑声、远场混响这些"不太像话"的片段，判别头会
+# 随机挑一个语种，中文录音里就冒出平假名和谚文（用户反馈「我全是中文的，
+# 转录里却有韩语日语」）。
+#
+# 默认锁中文：整个文件都按中文解码（模型提示词里钉死 zh），再把解码里
+# 残留的假名/谚文清掉。实测同一批远场样片：自动模式每份 2~4 个日/韩字，
+# 锁中文后 0 个；中英混说的英文照样出来（"Today is Tuesday" 不受影响）。
+# 录的是外语、或真要日韩语混说，把语种切到「自动」即可。
+def _is_kana(c: str) -> bool:
+    o = ord(c)
+    return (0x3040 <= o <= 0x30FF or 0x31F0 <= o <= 0x31FF
+            or 0xFF66 <= o <= 0xFF9F)
+
+
+def _is_hangul(c: str) -> bool:
+    o = ord(c)
+    return (0x1100 <= o <= 0x11FF or 0x3130 <= o <= 0x318F
+            or 0xA960 <= o <= 0xA97F or 0xAC00 <= o <= 0xD7A3)
+
+
+def _foreign_chars(text: str) -> int:
+    return sum(1 for c in text if _is_kana(c) or _is_hangul(c))
+
+
+def _strip_foreign(text: str):
+    """把锁中文时模型幻觉吐出来的假名/谚文剔掉。
+
+    返回 (剩下的字, 剔掉几个字)。剩下的若是空白，说明整段都是幻觉，
+    调用方直接丢掉这个 token。英文、数字、标点一律不动。
+    """
+    n = _foreign_chars(text)
+    if not n:
+        return text, 0
+    return ''.join(c for c in text if not (_is_kana(c) or _is_hangul(c))), n
+
+
 def app_dir() -> str:
     """exe 所在目录（打包后）或项目根（开发时）。"""
     if getattr(sys, 'frozen', False):
@@ -105,7 +143,28 @@ def decode_audio(path: str) -> np.ndarray:
     a = np.frombuffer(r.stdout, dtype=np.float32)
     if a.size == 0:
         raise DecodeError('这个文件里没有声音')
-    return np.ascontiguousarray(a)
+    return _condition(np.ascontiguousarray(a))
+
+
+def _condition(a: np.ndarray) -> np.ndarray:
+    """去直流 + 峰值归一。
+
+    手机录音常见两种毛病，都是音量层面的，跟模型无关：
+      ① 整段录得太小（峰值 -25 dBFS 以下），识别会漏字、串语种；
+      ② 有直流偏置（某些手机/声卡），频谱低频糊成一团。
+    峰值本来就够（≥0.5）的一个采样都不动 —— 归一不是万能药，
+    对已经正常的输入再放大只会把底噪一起抬上去。测过：干净的样本
+    归一前后逐字一致，衰减 20 dB 的样本归一后字准明显回升。
+    """
+    if a.size == 0:
+        return a
+    a = a - float(a.mean())
+    pk = float(np.max(np.abs(a)))
+    if pk < 1e-4:                 # 几乎是静音，别再放大底噪
+        return a
+    if pk >= 0.5:
+        return a
+    return (a * (0.85 / pk)).astype(np.float32)
 
 
 def duration_of(path: str) -> float:
@@ -170,17 +229,25 @@ class SpeechSpan:
     end: float
 
 
+# VAD 判"这是不是人在说话"的门槛。0.5 是 silero 的默认值，但对手机录音偏高：
+# 同一句里，声音小的人整段被判成静音（实测远场样本里最轻的那位只剩 4~7% 被切出来，
+# 等于这个人在稿子里根本不存在 —— 这很可能就是"多人只分出两个人"的成因之一）。
+# 0.40 能把轻的人捞回大半，又不至于把底噪当成话。
+VAD_THR = 0.40
+VAD_MIN_SPEECH = 0.25
+
+
 def split_speech(audio: np.ndarray, vad_model: str,
-                 min_silence: float = 0.35, min_speech: float = 0.30,
+                 min_silence: float = 0.35, min_speech: float = 0.0,
                  max_span: float = 22.0) -> list[SpeechSpan]:
     """用 silero-vad 找语音区间；超长段就地切开，免得识别时爆内存/掉精度。"""
     import sherpa_onnx as so
 
     cfg = so.VadModelConfig()
     cfg.silero_vad.model = vad_model
-    cfg.silero_vad.threshold = 0.5
+    cfg.silero_vad.threshold = VAD_THR
     cfg.silero_vad.min_silence_duration = min_silence
-    cfg.silero_vad.min_speech_duration = min_speech
+    cfg.silero_vad.min_speech_duration = min_speech or VAD_MIN_SPEECH
     cfg.sample_rate = SR
     vad = so.VoiceActivityDetector(cfg, buffer_size_in_seconds=60)
 
@@ -505,7 +572,10 @@ class Transcriber:
             os.path.join('models', 'speaker', 'campplus.onnx')])
         self.threads = threads
         self.lang = ''          # 最近一次转写判出的语种
-        self._rec = None
+        self.lang_pref = 'zh'   # 'zh' 锁中文（默认） / 'auto' 交给模型自己判
+        self.n_speakers = 0     # 0=自动；>1 时按用户给的人数分（最准）
+        self.dropped_lang = 0   # 本次清掉的外语误字数量
+        self._recs = {}
         self._punct = None
         self._diar = None
         self._emb = None
@@ -534,24 +604,31 @@ class Transcriber:
             miss.append('VAD 模型')
         return (not miss), '、'.join(miss)
 
-    def _recognizer(self):
-        if self._rec is None:
-            import sherpa_onnx as so
-            if self.use_sv:
-                # language='auto'：让模型自己判断中英日韩粤；
-                # use_itn=True：把「二零二四年」写成「2024年」，读起来省事。
-                self._rec = so.OfflineRecognizer.from_sense_voice(
-                    model=self.sv_model, tokens=self.sv_tokens,
-                    num_threads=self.threads, sample_rate=SR,
-                    decoding_method='greedy_search', debug=False, provider='cpu',
-                    language='auto', use_itn=True)
-            else:
-                self._rec = so.OfflineRecognizer.from_paraformer(
+    def _recognizer(self, lang: str = ''):
+        """按语种取识别器（缓存）。lang 空 = 用当前设置。
+
+        一个语种一个识别器实例：语言参数是构造期固定进模型提示词的，
+        换语种只能重建。缓存起来，只有真的出现可疑段时才多造一个。
+        """
+        if not self.use_sv:
+            if 'para' not in self._recs:
+                import sherpa_onnx as so
+                self._recs['para'] = so.OfflineRecognizer.from_paraformer(
                     paraformer=os.path.join(self.asr_dir, 'model.int8.onnx'),
                     tokens=os.path.join(self.asr_dir, 'tokens.txt'),
                     num_threads=self.threads, sample_rate=SR, feature_dim=80,
                     decoding_method='greedy_search', debug=False, provider='cpu')
-        return self._rec
+            return self._recs['para']
+        lg = lang or ('auto' if self.lang_pref == 'auto' else 'zh')
+        if lg not in self._recs:
+            import sherpa_onnx as so
+            # use_itn=True：把「二零二四年」写成「2024年」，读起来省事。
+            self._recs[lg] = so.OfflineRecognizer.from_sense_voice(
+                model=self.sv_model, tokens=self.sv_tokens,
+                num_threads=self.threads, sample_rate=SR,
+                decoding_method='greedy_search', debug=False, provider='cpu',
+                language=lg, use_itn=True)
+        return self._recs[lg]
 
     def _punctuator(self):
         if self._punct is None:
@@ -625,7 +702,8 @@ class Transcriber:
                 tick(0.2 + 0.78 * p, '区分说话人 %d/%d…'
                      % (min(total, int(p * total) + 1), total))
             try:
-                n_spk = assign_speakers(sents, audio, self._embedder(), sp)
+                n_spk = assign_speakers(sents, audio, self._embedder(), sp,
+                                         n_speakers=self.n_speakers)
             except _Canceled:
                 for s in sents:
                     s.speaker = ''
@@ -656,10 +734,7 @@ class Transcriber:
 
         tick(0.18, '识别 %d 段语音…' % len(spans))
         rec = self._recognizer()
-        tokens: list[str] = []
-        times: list[float] = []
-        seg_ids: list[int] = []
-        langs: list[str] = []
+        segs = []                    # [(span, tokens, times, 语种)]
         for k, sp in enumerate(spans):
             if self.cancel_event.is_set():
                 return {'sentences': [], 'duration': dur, 'chars': 0, 'canceled': True}
@@ -671,15 +746,30 @@ class Transcriber:
             res = st.result
             toks = list(getattr(res, 'tokens', []) or [])
             tss = list(getattr(res, 'timestamps', []) or [])
-            if self.use_sv:
-                lg = str(getattr(res, 'lang', '') or '').strip('<>|')
-                if lg:
-                    langs.append(lg)
+            lg = str(getattr(res, 'lang', '') or '').strip('<>|') if self.use_sv else ''
+            segs.append((sp, toks, tss, lg))
+            tick(0.18 + 0.55 * (k + 1) / len(spans), '识别中 %d/%d' % (k + 1, len(spans)))
+
+        tokens: list[str] = []
+        times: list[float] = []
+        seg_ids: list[int] = []
+        langs: list[str] = []
+        dropped = 0
+        for k, (sp, toks, tss, lg) in enumerate(segs):
+            if lg:
+                langs.append(lg)
             for t, s in zip(toks, tss):
+                if self.use_sv and self.lang_pref != 'auto':
+                    # 强制中文还是吐出假名/谚文 → 这是模型幻觉，不是谁说的话
+                    t, n_ = _strip_foreign(t)
+                    if n_:
+                        dropped += n_
+                        if not t.strip():
+                            continue
                 tokens.append(t)
                 times.append(sp.start + float(s))
                 seg_ids.append(k)
-            tick(0.18 + 0.62 * (k + 1) / len(spans), '识别中 %d/%d' % (k + 1, len(spans)))
+        self.dropped_lang = dropped
 
         if not tokens:
             return {'sentences': [], 'duration': dur, 'chars': 0}
@@ -689,7 +779,10 @@ class Transcriber:
             tick(0.82, '整理标点…')
             chars, ctimes, csegs = chars_from_tokens(tokens, times, seg_ids)
             fixed = ''.join(chars)
-            self.lang = max(set(langs), key=langs.count) if langs else ''
+            if self.lang_pref == 'auto':
+                self.lang = max(set(langs), key=langs.count) if langs else ''
+            else:
+                self.lang = 'zh'        # 锁了中文就别再显示「日本語」吓人
         else:
             tick(0.82, '加标点…')
             chars, ctimes, csegs = text_from_tokens(tokens, times, seg_ids)
@@ -719,7 +812,8 @@ class Transcriber:
                 tick(0.90 + 0.09 * p, '区分说话人 %d/%d…'
                      % (min(total, int(p * total) + 1), total))
             try:
-                n_spk = assign_speakers(sents, audio, self._embedder(), sp)
+                n_spk = assign_speakers(sents, audio, self._embedder(), sp,
+                                         n_speakers=self.n_speakers)
             except _Canceled:
                 for s in sents:
                     s.speaker = ''
@@ -732,7 +826,7 @@ class Transcriber:
         tick(1.0, '完成')
         return {'sentences': sents, 'duration': dur, 'speakers': n_spk,
                 'chars': sum(len(s.text) for s in sents), 'fixed': fixed,
-                'lang': self.lang}
+                'lang': self.lang, 'dropped': self.dropped_lang}
 
 
 # ---------------------------------------------------------------- 说话人
@@ -742,16 +836,17 @@ def _l2(v):
     return v / n if n > 1e-8 else v
 
 
-def voice_print(extractor, audio, a: float, b: float, sr: int = SR):
-    """截一小段音频提声纹，返回归一化向量；提不出来返回 None。"""
+def voice_print(extractor, audio, a: float, b: float, sr: int = SR,
+                cap: float = 6.0):
+    """截一段音频提声纹，返回归一化向量；提不出来返回 None。"""
     i = max(0, int(a * sr))
     j = min(len(audio), int(b * sr))
     if j - i < int(sr * 0.35):
         return None
     seg = audio[i:j]
-    if len(seg) > sr * 4:               # 声纹 4 秒足够，长了只是白费时间
-        mid = (len(seg) - sr * 4) // 2
-        seg = seg[mid:mid + sr * 4]
+    if len(seg) > sr * cap:             # 声纹 4~6 秒足够，长了只是白费时间
+        mid = (len(seg) - int(sr * cap)) // 2
+        seg = seg[mid:mid + int(sr * cap)]
     try:
         st = extractor.create_stream()
         st.accept_waveform(sr, seg)
@@ -764,87 +859,86 @@ def voice_print(extractor, audio, a: float, b: float, sr: int = SR):
     return _l2(v)
 
 
-def _cluster(vecs, thr: float = 0.62):
-    """贪心余弦聚类，只用来给 k-means 找初始质心。
+def _turns(sents: list[Sentence], max_gap: float = 0.55,
+           max_len: float = 12.0, unit_min: float = 1.0):
+    """把句子归成「提声纹的单位」：长的句子自己一个，碎句子跟前一句粘起来。
 
-    阈值故意取得比"同一人"的门槛高一点：宁可先多分几个簇，
-    后面 k-means 会按整体重新分配，错分的能纠正回来。
+    返回 [[起点, 终点, 起始句号, 结束句号], ...]。
+
+    为什么不是"逐句提声纹"：一句话常常只有一两秒，campplus 在这么短的片段上
+    抖得厉害，同一个人相邻两句的相似度能掉到 0.4 以下，于是同一个人被拆开。
+
+    为什么也不是"把相邻句子一股脑并成 8 秒"（试过）：两个人抢话时中间没有静音，
+    一句话的尾巴会跟下一个人的开头并进同一段，声纹变成两个人的混合物 ——
+    实测四川话那位被拆成 3 个"人"，互相只有 0.32~0.44（同一个人却不像），
+    而跟别人反倒有 0.50。混合物比短片段更害人，所以只粘"碎句子"。
     """
-    cents: list[np.ndarray] = []
-    labels: list[int] = []
-    for v in vecs:
-        if not cents:
-            cents.append(v.copy())
-            labels.append(0)
-            continue
-        sims = [float(v @ c) for c in cents]
-        k = int(max(range(len(sims)), key=lambda x: sims[x]))
-        if sims[k] >= thr:
-            labels.append(k)
-        else:
-            cents.append(v.copy())
-            labels.append(len(cents) - 1)
-    return labels
+    out: list[list] = []
+    for i, s in enumerate(sents):
+        d = max(0.05, s.end - s.start)
+        if out:
+            pgap = s.start - out[-1][1]
+            plen = out[-1][1] - out[-1][0]
+            if (pgap <= max_gap and plen + d <= max_len
+                    and (d < unit_min or plen < unit_min)):
+                out[-1][1] = max(out[-1][1], s.end)
+                out[-1][3] = i + 1
+                continue
+        out.append([s.start, s.end, i, i + 1])
+    return out
 
 
-def _refine(vecs, labels, iters: int = 12):
-    """k-means：每轮用簇内平均向量当质心，把所有点重新分配到最像的质心。
+def _centroids(vecs, labels):
+    out = {}
+    for l in sorted(set(labels)):
+        c = np.mean([v for v, x in zip(vecs, labels) if x == l], axis=0)
+        out[l] = _l2(c)
+    return out
 
-    只跑一次贪心聚类是不够的 —— 早出现的一个"不像"的句子会新建一个簇，
-    后面同一个人全被吸进去，标签就乱了。反复重分配能把它拉回来。
+
+SPK_MERGE_THR = 0.78      # 两个簇质心多像才并成一个（远场要保守）
+SPK_CLUSTER_THR = 0.50    # 层次聚类的距离阈值
+SPK_SENT_MIN = 1.2        # 超过这个长度的句子单独对一次质心
+SPK_SENT_SIM = 0.45       # 句子跟质心多像才改判（拿不准就跟着轮走）
+
+
+def _merge_close(vecs, labels, thr: float = 0.78):
+    """质心太像的两个簇并掉 —— 同一个人被切成两簇，是聚类最常见的错。
+
+    阈值 0.78 比旧版的 0.62 高一大截，是有意的：旧版把「有点像」也当成
+    同一个人，而手机录音的远场混响会把**不同人**的质心相似度抬到 0.5~0.6，
+    0.62 正好落在中间，一屋子人就被并成两三个。宁可多分一个人
+    （用户看得见、点一下就能改名），也别把两个人糊成一个 —— 糊在一起
+    是改不回来的，重跑一遍还是糊的。
     """
-    V = np.stack(vecs)
-    lab = np.array(labels)
-    for _ in range(iters):
-        uniq = sorted(set(lab.tolist()))
-        if len(uniq) <= 1:
-            break
-        cents = np.stack([V[lab == u].mean(axis=0) for u in uniq])
-        cents /= np.maximum(np.linalg.norm(cents, axis=1, keepdims=True), 1e-8)
-        new = np.array(uniq)[np.argmax(V @ cents.T, axis=1)]
-        if np.array_equal(new, lab):
-            break
-        lab = new
-    return lab.tolist()
-
-
-def _merge_similar(vecs, labels, thr: float = 0.62):
-    """两个簇的质心太像就并掉 —— 同一个人被拆成两簇是最常见的错。
-
-    阈值 0.62 是实测出来的：同一个人不同句子之间，质心相似度会掉到 0.68；
-    不同人之间只有 0.12~0.25。0.78 会把前者漏掉（一句语气不同的短话
-    就自成一个「说话人」），0.62 两边都不碰。
-    """
-    V = np.stack(vecs)
+    labels = list(labels)
     while True:
-        uniq = sorted(set(labels))
-        if len(uniq) <= 1:
-            break
-        cents = {}
-        for u in uniq:
-            c = V[[i for i, l in enumerate(labels) if l == u]].mean(axis=0)
-            cents[u] = c / max(float(np.linalg.norm(c)), 1e-8)
+        cs = _centroids(vecs, labels)
+        ks = list(cs)
+        if len(ks) <= 1:
+            return labels
         best, pair = 0.0, None
-        for i in range(len(uniq)):
-            for j in range(i + 1, len(uniq)):
-                s = float(cents[uniq[i]] @ cents[uniq[j]])
+        for i in range(len(ks)):
+            for j in range(i + 1, len(ks)):
+                s = float(cs[ks[i]] @ cs[ks[j]])
                 if s > best:
-                    best, pair = s, (uniq[i], uniq[j])
+                    best, pair = s, (ks[i], ks[j])
         if pair is None or best < thr:
-            break
+            return labels
         a, b = pair
-        cnt_a = labels.count(a)
-        cnt_b = labels.count(b)
-        keep, drop = (a, b) if cnt_a >= cnt_b else (b, a)
-        labels = [keep if l == drop else l for l in labels]
-    return labels
+        labels = [a if x == b else x for x in labels]
+
+
+def _guess_confidence(vecs, labels):
+    cs = _centroids(vecs, labels)
+    return [float(v @ cs[l]) for v, l in zip(vecs, labels)]
 
 
 def _smooth(labels: list[int], conf: list[float] | None = None,
             thr: float = 0.55, max_run: int = 2) -> list[int]:
     """把夹在两个同一个人中间的短促异类抹平。
 
-    只动**置信度低**的句子。真实播客里一个人插一句话太常见了，
+    只动**置信度低**的句子。真实录音里一个人插一句话太常见了，
     那句插话的声纹往往很明确（0.7 以上），抹掉它才是错。
     """
     n = len(labels)
@@ -867,85 +961,119 @@ def _smooth(labels: list[int], conf: list[float] | None = None,
     return lab
 
 
-def _merge_small(labels, weights, cents, min_share: float = 0.04):
-    """占比太小的簇并进最像的那个 —— 咳嗽、笑声被单独分出一个「人」很常见。"""
-    total = sum(weights) or 1.0
-    share: dict[int, float] = {}
-    for l, w in zip(labels, weights):
-        share[l] = share.get(l, 0.0) + w
-    keep = [l for l in share if share[l] / total >= min_share]
-    if not keep:
-        keep = [max(share, key=lambda x: share[x])]
-    if len(keep) == len(share):
-        return labels
-    remap = {}
-    for l in share:
-        if l in keep:
-            continue
-        remap[l] = max(keep, key=lambda k: float(cents[l] @ cents[k]))
-    return [remap.get(l, l) for l in labels]
-
-
 def assign_speakers(sents: list[Sentence], audio, extractor,
-                    on_progress=None) -> int:
+                    on_progress=None, n_speakers: int = 0) -> int:
     """把每个句子归到某个说话人身上，返回说话人总数。
 
-    做法：逐句提声纹 → 在线聚类 → 抹掉一两句的抖动 → 把小簇并进大簇。
+    流程：并轮 → 逐轮提声纹 → FastClustering（层次聚类）→ 保守合并
+    → 逐句投票 → 抹掉低置信抖动 → 重新编号。
+
+    n_speakers > 1 时按用户给的人数硬分（很多人知道自己录的是几个人，
+    这条比任何自动判据都准）；否则自动。
+
     一个人说话时返回 1，调用方据此把标注全清掉（不标注比标错好）。
     """
     n = len(sents)
     if n == 0:
         return 0
+    ts = _turns(sents)
     vecs: list[np.ndarray] = []
-    idx: list[int] = []
-    for i, s in enumerate(sents):
-        v = voice_print(extractor, audio, s.start - 0.12, s.end + 0.15)
+    tidx: list[int] = []
+    wts: list[float] = []
+    for k, (a, b, _i0, _i1) in enumerate(ts):
+        v = voice_print(extractor, audio, a - 0.10, b + 0.10)
         if v is not None:
             vecs.append(v)
-            idx.append(i)
-        if on_progress and (i % max(1, n // 50) == 0):
-            on_progress(min(0.999, i / n))
+            tidx.append(k)
+            wts.append(max(0.4, b - a))
+        if on_progress and (k % max(1, len(ts) // 50) == 0):
+            on_progress(min(0.98, (k + 1) / max(1, len(ts))))
     if len(vecs) < 2:
         return 0
 
-    labels = _cluster(vecs)
-    labels = _refine(vecs, labels)
-    labels = _merge_similar(vecs, labels)
-
     V = np.stack(vecs)
-    cents: dict[int, np.ndarray] = {}
-    for l in set(labels):
-        c = V[[i for i, x in enumerate(labels) if x == l]].mean(axis=0)
-        cents[l] = c / max(float(np.linalg.norm(c)), 1e-8)
+    import sherpa_onnx as so
 
-    # 每句跟自己簇质心有多像；只有不像的才允许被平滑掉
-    conf = [float(v @ cents[l]) for v, l in zip(vecs, labels)]
-    labels = _smooth(labels, conf)
+    want = int(n_speakers or 0)
+    if want > 1:
+        want = min(want, len(vecs))
+        lab = list(so.FastClustering(
+            so.FastClusteringConfig(num_clusters=want, threshold=SPK_CLUSTER_THR))(V))
+    else:
+        lab = list(so.FastClustering(
+            so.FastClusteringConfig(num_clusters=-1, threshold=SPK_CLUSTER_THR))(V))
+        lab = _merge_close(V, lab, SPK_MERGE_THR)
+        # 份额太小的簇：像才并，不像就自成一位 —— 全程只说了三句话的人
+        # 也是一位说话人，旧版按 4% 一视同仁地并进大簇，等于把他抹掉了
+        total = sum(wts) or 1.0
+        share: dict[int, float] = {}
+        for l, w in zip(lab, wts):
+            share[l] = share.get(l, 0.0) + w
+        cs0 = _centroids(V, lab)
+        big = [l for l in share if share[l] / total >= 0.02]
+        if not big:
+            big = [max(share, key=lambda x: share[x])]
+        remap = {}
+        for l in share:
+            if l in big:
+                continue
+            best = max(big, key=lambda k2: float(cs0[l] @ cs0[k2]))
+            if float(cs0[l] @ cs0[best]) >= 0.68:
+                remap[l] = best
+        lab = [remap.get(l, l) for l in lab]
 
-    weights = [max(0.3, sents[i].end - sents[i].start) for i in idx]
-    labels = _merge_small(labels, weights, cents)
+    conf_t = _guess_confidence(V, lab)
+    pos = {k: i for i, k in enumerate(tidx)}
+    lab_s: list[int] = [-1] * n
+    conf_s: list[float] = [0.0] * n
+    for k in tidx:                        # 先用「轮」的结果铺底
+        _a, _b, i0, i1 = ts[k]
+        l = lab[pos[k]]
+        for si in range(i0, i1):
+            lab_s[si] = l
+            conf_s[si] = conf_t[pos[k]]
+
+    # 一轮里可能夹着话头交替（一人说完另一人马上接，中间没有静音），
+    # 所以够长的句子再单独对一次质心：轮负责"有几个人、各自什么声音"，
+    # 句负责"这一句到底是谁"。近质心的句子才改判，拿不准就跟着轮走。
+    cents = _centroids(V, lab)
+    keys = list(cents)
+    Cm = np.stack([cents[k] for k in keys])
+    for i, s in enumerate(sents):
+        if s.end - s.start < SPK_SENT_MIN:
+            continue
+        v = voice_print(extractor, audio, s.start - 0.08, s.end + 0.10, cap=4.0)
+        if v is None:
+            continue
+        sims = Cm @ v
+        kk = int(np.argmax(sims))
+        if float(sims[kk]) >= SPK_SENT_SIM:
+            lab_s[i] = keys[kk]
+            conf_s[i] = max(float(sims[kk]), conf_s[i])
+    # 提不出声纹的句子（太短，或落在底噪里）：跟前一句走
+    prev = -1
+    for i, l in enumerate(lab_s):
+        if l < 0:
+            lab_s[i] = prev
+        else:
+            prev = l
+    prev = -1
+    for i in range(n - 1, -1, -1):
+        if lab_s[i] < 0:
+            lab_s[i] = prev
+        else:
+            prev = lab_s[i]
+    lab_s = _smooth(lab_s, conf_s)
     if on_progress:
         on_progress(0.999)
 
-    for i, l in zip(idx, labels):
-        sents[i].speaker = 'k%d' % l
-
-    # 落在空隙里、或太短提不出声纹的句子，跟前一句走
-    prev = ''
-    for s in sents:
-        if s.speaker:
-            prev = s.speaker
-        else:
-            s.speaker = prev
-
     # 重排成 1..N，按首次出现的顺序
-    order: dict[str, int] = {}
-    for s in sents:
-        if s.speaker and s.speaker not in order:
-            order[s.speaker] = len(order) + 1
-    for s in sents:
-        if s.speaker:
-            s.speaker = str(order[s.speaker])
+    order: dict[int, int] = {}
+    for l in lab_s:
+        if l >= 0 and l not in order:
+            order[l] = len(order) + 1
+    for i, l in enumerate(lab_s):
+        sents[i].speaker = str(order[l]) if l in order else ''
 
     # 只分出一个人：全清掉。单人录音被标成「说话人1」纯属添乱
     if len(order) <= 1:

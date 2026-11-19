@@ -1,6 +1,6 @@
 # 言札 · YanZha
 
-**v0.5.0** · 2026-11-16
+**v0.6.0** · 2026-11-19
 
 把录音、播客、会议、视频，变成能直接用的文字稿。
 
@@ -34,7 +34,10 @@ Cantonese), speaker diarization, glossary, 7 export formats. Windows x64, MIT.*
 | 能力 | 说明 |
 |---|---|
 | **五门语言** | 中文、English、日本語、한국어、粤语，自动判断语种，中英混说也认 |
-| **区分说话人** | 多人播客/访谈按人分段，标「说话人 1 / 2 / 3」；单人录音自动去掉标注 |
+| **区分说话人** | 多人播客/访谈按人分段，标「说话人 1 / 2 / 3」；单人录音自动去掉标注；知道总人数可以指定，改人数只重跑分人 |
+| **亮色主题** | 顶栏一点就切「☀ 亮色」，纸白底加深字，白天、投影、屏幕偏暗的笔记本上更好认；暗色下本来就偏灰的时间码、状态行也一起提亮了。选择记在本机，下次打开照旧 |
+| **语种锁定** | 默认锁中文。中文录音在底噪、笑声、远场混响上容易猜成日文/韩文，锁上以后可疑段用中文重认、残留的假名谚文清掉；录外语就切「自动 · 中英日韩粤」 |
+| **按人数分人** | 知道自己录的是几个人（2~6）就选上，按人数硬分，比自动判更准；改人数只重跑分人，不重新识别 |
 | **说话人改名** | 点一下「说话人 1」改成「主持人」「嘉宾」，导出全部格式跟着变 |
 | **校对改字** | 双击句子听原音，就地改字、删句、撤销，改完直接导出 |
 | **查找替换** | 一个错词满篇都是：「替」→ 填正确的词 →「全部替换」一次改完，`Ctrl+Z` 整批退回；替换框留空即删掉这个词 |
@@ -48,6 +51,63 @@ Cantonese), speaker diarization, glossary, 7 export formats. Windows x64, MIT.*
 | **逐字时间戳** | 字幕能精确到每一句的起止，导入剪映、Premiere、B 站 |
 | **字幕自动折行** | srt / vtt 里一句太长会断成两行，剪映里不溢屏 |
 | **可中断** | 进度实时、还剩几分钟也一起算给你；随时能停；改「区分说话人」勾选不用重跑识别 |
+
+---
+
+## v0.6.0 改了什么（实测过的）
+
+这一版是按用户反馈改的，四件事。
+
+**① 太黑了，看不见** — 顶栏加了「☀ 亮色 / ☾ 暗色」，一点就换，选择存在本机。
+顺手把暗色里偏灰的字提亮了：时间码、状态行这类次要文字原来对比度只有 3.2:1，
+现在 5.4:1（WCAG AA 对正文要求 4.5:1）。界面里 57 种颜色全部收进 CSS 变量，
+切主题只切一块，不会再出现"切了亮色还剩一块黑的"。
+
+**② 转录里冒出日语、韩语，而我全是中文** — 模型自带一个语种判别头，遇到底噪、
+笑声、远场混响这类"不太像话"的片段会乱猜语种，中文录音里就蹦出平假名和谚文。
+现在默认**锁中文**：整个文件按中文解码，再把残留的假名、谚文清掉。
+实测三份远场样片：自动模式分别冒出 2 / 0 / 4 个日韩字，锁中文后全是 0；
+两份结果的字级相似度 0.76~0.86，差的只是被纠正的那几处。
+中英混说照旧——"Today is Tuesday" 在锁定模式下照样出来。
+录的是外语、或真要日韩语混说，把「语种」切到「自动」即可。
+
+**③ 多人说话，一直只分出两个人** — 查下来是两个独立的毛病，都修了：
+
+*其一，声音小的人会被整段丢掉。* VAD（判断"这段是不是人在说话"）的门槛是
+silero 的默认 0.5，对手机录音偏高。同一段 5 人录音里，最轻的那位只有 **4~7%**
+的话被切出来 —— 等于这个人在稿子里根本不存在，剩下的自然就是声音最大的两个人。
+把门槛降到 0.40（最短语音 0.30→0.25 秒）后，同一位的覆盖率升到 **53~89%**，
+那份样本从 0 句变成 6 句，整体语音覆盖从 55% 升到 73%，碎句（≤3 字）没有变多。
+
+*其二，聚类的合并条件太松。* 原来逐句提声纹（一句话常常只有一两秒，声纹本身就抖），
+再用固定 0.62 的相似度合并 —— 远场混响会把**不同人**的声纹相似度抬到 0.5~0.6，
+0.62 正好落在这条缝里，一屋子人被并成两三个人。现在：
+
+- 按"提声纹的单位"提，碎句跟前一句粘起来，长句自己一个（不粘，免得把两个人的话
+  混进同一段声纹）
+- 换成分层聚类（sherpa-onnx 的 FastClustering）
+- 合并阈值提到 **0.78**：宁可多分一个人（点一下就能改名），也不把两个人糊成一个，
+  糊在一起是改不回来、重跑也还是糊的
+- 占比不足 2% 的小簇不再一律并进大簇，且必须"很像"才并 —— 全程只说了三句话的人
+  也是一位说话人
+- 句子级再对一次质心，处理"一个人说完另一个马上接、中间没静音"的情况
+
+实测 5 人远场样片（20 dB / RT60 0.35 / 正常换人间隔）：自动分出 **5 人，纯度 100%**。
+
+*顺带加了个「人数」下拉*：你清楚知道自己录的是几个人，就选上（2~6 人），
+按人数硬分。同一个样本指定 5 人 → **5 人、纯度 100%**。已经转好的稿子改一下人数
+再点「开始转写」，**只重跑分人**（几秒），不重新识别。
+
+**④ 识别不准** — 手机录音常常整段偏小。解码后做去直流 + 峰值归一，峰值本来就够的
+样本一个采样都不动。实测：衰减 20 dB 的样片归一后峰值回到 0.85；干净样本归一前后
+逐字一致。
+
+这一版两套自测全绿：**引擎 20 项**（音量归一 4、语种清理 6、整份文件锁语种 4、多人分人 5、
+单人录音 1）、**界面 36 项**（颜色变量化、两套主题的对比度、控件接线、语种判据）。
+
+> 手上没有反馈里那份手机录音，上面的数字是在「5 个真人声 + 混响 + 底噪」的远场
+> 合成样本上量的。真实录音受重叠、抢话、底噪影响，分得准不准仍要看素材；
+> 分不准时先动「人数」下拉 —— 比自动判靠得住。
 
 ---
 
@@ -74,7 +134,9 @@ Cantonese), speaker diarization, glossary, 7 export formats. Windows x64, MIT.*
 - **单人录音勾了也没关系**：只分出一个人时标注自动去掉，导出的就是干净稿子
 - 默认开着；确定是单人朗读、讲座，关掉更快
 - 分几人不影响文字本身，只影响分段和标注
-- 声音重叠、抢话、笑声多的时候，分人可能有偏差，这是这类技术的通病
+- 左下角 **「人数」** 默认自动。自动分人最常出的错是「明明四五个人，只分出两个」——远场录音里不同人的声纹会互相靠拢，硬阈值一裁就裁掉了。你清楚知道自己录的是几个人，就选上（2 到 6 人），**按人数硬分，比任何自动判据都准**
+- 分人的取舍是**宁可多分一个人，也不把两个人糊成一个**：糊在一起改不回来，重跑一遍还是糊的；多出来的人点一下就能改名
+- 声音重叠、抢话、笑声多的时候，分人仍然可能有偏差，这是这类技术的通病；这时指定人数比自动稳得多
 
 ---
 
@@ -311,6 +373,9 @@ no GPU required.
 |---|---|
 | **5 languages** | Chinese, English, Japanese, Korean, Cantonese — auto-detected, no manual switch; mixed zh/en in one file works |
 | **Speaker diarization** | Splits multi-speaker podcasts/interviews by person, labelled "Speaker 1 / 2 / 3"; automatically removed for single-speaker files |
+| **Light theme** | One click on "☀ 亮色" in the header — warm paper background plus dark text, easier in daylight, on projectors and on dim laptop screens. The dimmest text in dark mode was lifted too. The choice is remembered locally |
+| **Language lock** | Chinese is locked by default: on noise, laughter and far-field reverb the tagger sometimes guesses Japanese or Korean for Chinese audio. Suspicious segments are re-decoded as Chinese and leftover kana/hangul removed. Switch the "语种" dropdown to "自动 · 中英日韩粤" to let the model decide again |
+| **Fixed speaker count** | If you know how many people are in the recording (2–6), pick it and clustering is forced to that count — far more reliable than automatic. Changing the count re-runs diarization only, never recognition |
 | **Rename speakers** | Click "Speaker 1" → rename to "Host" / "Guest"; applies to every export format |
 | **Proofreading** | Double-click any line to hear that moment, edit in place, clear a line to drop it, `Ctrl+Z` to undo |
 | **Find & replace** | One misheard word appearing everywhere: hit "替", type the right one, "全部替换" — the whole batch reverts with one `Ctrl+Z`; leave the box empty to delete that word |
@@ -323,6 +388,47 @@ no GPU required.
 | **Punctuation & paragraphs** | Built into the model — real sentences, not one unreadable wall of text |
 | **Word-level timestamps** | Subtitles precise enough for Premiere / Final Cut / Bilibili |
 | **Resumable** | Live progress with an estimated time remaining, stop anytime; toggling diarization does not re-run recognition |
+
+### v0.6.0 — what changed (measured)
+
+- **Light theme.** One click in the header; the choice is remembered. The dimmest
+  text in dark mode (timestamps, status line) went from 3.2:1 to 5.4:1 contrast
+  (WCAG AA asks 4.5:1 for body text). All 57 colours are CSS variables, so
+  switching themes leaves nothing behind.
+- **Chinese locked by default.** The built-in language tagger guesses on noise,
+  laughter and far-field reverb, so Chinese audio occasionally produced kana or
+  hangul. In locked mode the whole file is decoded as Chinese and any leftover
+  kana/hangul is dropped. On three far-field samples the auto mode produced
+  2 / 0 / 4 foreign characters, the locked mode 0, with 0.76–0.86 character-level
+  similarity between the two transcripts. Mixed Chinese/English still works
+  ("Today is Tuesday" survives), and "自动" restores free language detection.
+- **Diarization: two separate bugs fixed.**
+  1. *Quiet speakers were dropped entirely.* The VAD threshold was silero's
+     default 0.5, too high for phone recordings: the quietest of five speakers had
+     only **4–7 %** of their speech detected — the person simply did not exist in
+     the transcript. At 0.40 (and minimum speech 0.30 → 0.25 s) the same speaker
+     reaches **53–89 %**, the sample goes from 0 to 6 sentences for them, overall
+     speech coverage rises from 55 % to 73 %, and no extra fragments appear.
+  2. *Clustering merged too eagerly.* Sentence-level embeddings (1–2 s, unstable)
+     were merged at a fixed 0.62 similarity; reverberation pushes *different*
+     speakers to 0.5–0.6, right through that threshold. Now the units are
+     sentence groups (fragments glued, long sentences kept separate to avoid
+     mixing two voices into one voiceprint), clustering is hierarchical
+     (sherpa-onnx FastClustering), the merge threshold is **0.78**, and clusters
+     below 2 % are no longer absorbed unless they are genuinely close.
+     On a five-speaker far-field sample: **5 speakers, 100 % purity**.
+- **Speaker-count selector (2–6).** If you know how many people are in the room,
+  say so: the same sample forced to 5 gives **5 speakers, 100 % purity**.
+  Changing the count re-runs diarization only, never recognition.
+- **Loudness conditioning** before recognition (DC removal + peak normalisation,
+  a no-op when the level is already fine).
+
+> The recording from the feedback is not in hand, so these numbers come from
+> synthetic far-field samples built from five real speakers (reverb + noise).
+> Overlap and crosstalk still limit real-world accuracy; when it is off, set the
+> speaker count.
+
+---
 
 ### Quick start
 
@@ -432,4 +538,4 @@ compliance table and [`licenses/`](licenses/) for the full text.
 **© 永远的兰兰 · Lanlan Eternal**
 
 仓库 / Repository：https://github.com/podcatcher962/YanZha
-版本 / Version：v0.5.0 · 2026-11-16
+版本 / Version：v0.6.0 · 2026-11-19
