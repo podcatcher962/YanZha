@@ -995,7 +995,9 @@ def assign_speakers(sents: list[Sentence], audio, extractor,
     import sherpa_onnx as so
 
     want = int(n_speakers or 0)
-    if want > 1:
+    # want == 1 也走硬分：一人也分出 1 簇，末尾「只分出一个人就全清标注」会生效。
+    # 单人录音被切成七八个人，是用户反馈里最常见的一种。
+    if want >= 1:
         want = min(want, len(vecs))
         lab = list(so.FastClustering(
             so.FastClusteringConfig(num_clusters=want, threshold=SPK_CLUSTER_THR))(V))
@@ -1243,6 +1245,71 @@ def to_json(sentences: list[Sentence], meta: str = '') -> str:
             for s in sentences],
     }
     return _json.dumps(data, ensure_ascii=False, indent=2) + '\n'
+
+
+# ---------------------------------------------------------------- 校对稿
+# 「拿出去改、再拿回来」用的中间格式：一行一句，行首编号。
+#
+# 为什么不直接给 txt / md：那两种是按段落合并的，一段里好几句话，外面改完
+# 拆不回来，只能整篇覆盖 —— 时间戳和说话人就全丢了。编号是硬锚点：哪怕外面
+# 弄丢几行编号，其余行照样对得上，不会因为一行对不齐就整篇白改。
+
+PROOF_LINE = re.compile(r'^\s*(\d+)\s*[|｜]\s*([^|｜]*)[|｜]\s?(.*)$')
+
+PROOF_TIP = ('# 每行「编号|说话人|正文」。改完把整篇粘回「导出 → 粘贴改好的稿子」，'
+             '编号别删。说话人那一列改了不生效，要改名到稿子左侧改。')
+
+
+def to_proof(sentences: list[Sentence], meta: str = '') -> str:
+    """一行一句、行首带编号的校对稿，专门给外部工具改。"""
+    lines = []
+    if meta:
+        lines.append('# ' + meta)
+    lines.append(PROOF_TIP)
+    for i, s in enumerate(sentences, 1):
+        spk = (getattr(s, 'speaker', '') or '').strip()
+        lines.append('%d|%s|%s' % (i, _spk_label(spk) if spk else '', s.text))
+    lines.append('')
+    lines.append('—' * 18)
+    lines.append(DISCLAIMER)
+    return '\n'.join(lines) + '\n'
+
+
+def apply_proof(sentences: list[Sentence], text: str):
+    """把外部改好的校对稿写回句子。
+
+    返回 (改了几句, 格式不认的行, 文字为空的行, 编号越界的行)。
+    - 文字为空按「跳过」处理，不当删句：外面顺手删掉一行，不该让稿子少一句。
+    - 第二列（说话人）忽略：说话人靠声纹分的，外面改了也不该生效。
+    """
+    got: dict[int, str] = {}
+    bad = empty = unknown = 0
+    n = len(sentences)
+    for raw in (text or '').splitlines():
+        ln = raw.strip()
+        if not ln or ln.startswith('#'):
+            continue
+        m = PROOF_LINE.match(ln)
+        if not m:
+            bad += 1
+            continue
+        k = int(m.group(1))
+        if k < 1 or k > n:
+            unknown += 1
+            continue
+        body = ' '.join(m.group(3).split())
+        if not body:
+            empty += 1
+            continue
+        got[k] = body
+    changed = 0
+    for k, body in got.items():
+        s = sentences[k - 1]
+        if body != s.text:
+            s.text = body
+            changed += 1
+    return changed, bad, empty, unknown
+
 
 
 def to_docx(sentences: list[Sentence], path: str, meta: str = '',

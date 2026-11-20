@@ -1,6 +1,6 @@
 # 言札 · YanZha
 
-**v0.6.0** · 2026-11-19
+**v0.6.1** · 2026-11-20
 
 把录音、播客、会议、视频，变成能直接用的文字稿。
 
@@ -15,7 +15,7 @@ Windows 10/11 64 位 · 单文件程序 + 本地模型 · MIT 开源
 *Turn recordings, podcasts, meetings and videos into usable transcripts.
 Fully offline — nothing uploaded, no account, no time limit, free.
 Five languages auto-detected (Chinese / English / Japanese / Korean /
-Cantonese), speaker diarization, glossary, 7 export formats. Windows x64, MIT.*
+Cantonese), speaker diarization, glossary, 8 export formats. Windows x64, MIT.*
 *— [English section below ↓](#english)*
 
 ---
@@ -34,17 +34,18 @@ Cantonese), speaker diarization, glossary, 7 export formats. Windows x64, MIT.*
 | 能力 | 说明 |
 |---|---|
 | **五门语言** | 中文、English、日本語、한국어、粤语，自动判断语种，中英混说也认 |
-| **区分说话人** | 多人播客/访谈按人分段，标「说话人 1 / 2 / 3」；单人录音自动去掉标注；知道总人数可以指定，改人数只重跑分人 |
+| **区分说话人** | 多人播客/访谈按人分段，标「说话人 1 / 2 / 3」；单人录音自动去掉标注；知道总人数可以指定（1 就是单人），改人数只重跑分人 |
 | **亮色主题** | 顶栏一点就切「☀ 亮色」，纸白底加深字，白天、投影、屏幕偏暗的笔记本上更好认；暗色下本来就偏灰的时间码、状态行也一起提亮了。选择记在本机，下次打开照旧 |
 | **语种锁定** | 默认锁中文。中文录音在底噪、笑声、远场混响上容易猜成日文/韩文，锁上以后可疑段用中文重认、残留的假名谚文清掉；录外语就切「自动 · 中英日韩粤」 |
-| **按人数分人** | 知道自己录的是几个人（2~6）就选上，按人数硬分，比自动判更准；改人数只重跑分人，不重新识别 |
+| **按人数分人** | 知道自己录的是几个人（1~6，1 就是单人）就选上，按人数硬分，比自动判更准；改人数只重跑分人，不重新识别。自动分出 4 人以上时，结果上方会直接问「这段其实几个人」，点一下就重分 |
 | **说话人改名** | 点一下「说话人 1」改成「主持人」「嘉宾」，导出全部格式跟着变 |
 | **校对改字** | 双击句子听原音，就地改字、删句、撤销，改完直接导出 |
 | **查找替换** | 一个错词满篇都是：「替」→ 填正确的词 →「全部替换」一次改完，`Ctrl+Z` 整批退回；替换框留空即删掉这个词 |
 | **术语表** | 同一个人名、书名、公司名，在同一个人的每一期里都错成同一样子。右上角「术语表」填左右两栏（左＝错的词，右＝改成什么），**不用敲箭头**，转完自动改掉；改错了 `Ctrl+Z` 整批退回。更省事：在稿子上用「替」改对后勾上替换条里的**「记住」**，这条替换自动进表 |
 | **稿子不会丢** | 改到一半直接关程序也不丢：改完随时存一份本机草稿（不上传、不进源文件夹），下次打开左栏提示「有 N 份没导出的稿子」，点一下接着改 |
 | **导出前检查** | 点导出时先扫一遍，只报**根本没人说过的**东西：只剩标点的空壳句、（音乐）（掌声）这类标注、同一段被识别两遍（按时间戳重叠判定）。句子长短、口头重复一概不管——不改也能照样导；真没问题就不弹窗 |
-| **七种导出** | txt / md / Word / srt / vtt / 带时间戳 txt / 结构化 json |
+| **八种导出** | txt / md / Word / srt / vtt / 带时间戳 txt / 结构化 json / 校对稿 |
+| **拿出去改再粘回来** | 「导出 → 校对稿」存一份一行一句、行首带编号的 txt，拿给任何工具改；改完「导出 → 粘贴改好的稿子」把整篇贴回来，按编号逐句落回，时间戳和说话人都保留。删了编号的行跳过，其余照常回填；程序全程不联网，稿子出不出这台电脑由你决定 |
 | **批量导出** | 一次转了十个文件，选一个文件夹按同一种格式全部导出；撞名不覆盖，自动加 `-2` |
 | **音视频通吃** | 音频 mp3 m4a wav flac aac ogg opus wma；视频 mp4 mkv mov avi flv webm ts m4v |
 | **自动标点断句** | 模型自带标点，按句整理成段，不是一坨没有标点的流水 |
@@ -53,6 +54,28 @@ Cantonese), speaker diarization, glossary, 7 export formats. Windows x64, MIT.*
 | **可中断** | 进度实时、还剩几分钟也一起算给你；随时能停；改「区分说话人」勾选不用重跑识别 |
 
 ---
+
+## v0.6.1 改了什么（实测过的）
+
+这条是按用户反馈改的：两人通话被分成了 8 个人，还想把稿子拿给 AI 改。
+
+**① 分多了，程序自己会问** — 自动模式分出 4 人以上时，稿子上方直接出一句
+「自动分出 5 个人？这段其实几个人」，两个按钮：「只有 1 个人」「是 2 人」。
+点了只重跑分人，**不重新识别，你手改过的字一个不动**。
+实测一段 14 句的独白（真实单人录音）被自动切成 5 个人（簇 5/4/2/2/1）；
+点「只有 1 个人」后 0.8 秒变单人、标注全部清空，先前手改的那句仍在原处。
+
+**② 人数下拉补了「1 人」** — 原来只有 2~6，单人录音只能靠关掉「区分说话人」。
+现在有「1 人（单人）」，按 1 个簇硬分，标注直接清掉。
+
+**③ 稿子能拿出去改，也能拿回来** — 新增「导出 → 校对稿」：一行一句、
+行首带编号、**不带时间戳**（不干扰 AI 读），扔给任何工具改都行。
+改完「导出 → 粘贴改好的稿子」贴回来，按编号逐句落回，时间轴和说话人全留着。
+编号被弄丢的行只跳过那几行，其余照常回填；文字被清空的行按跳过处理（防手滑丢句）；
+整批算一次 `Ctrl+Z`。导出因此从七种变**八种**。
+
+> 为什么不内置 AI 接口：录音稿多是访谈、通话，传出去就是隐私问题，出事得我们担。
+> 程序自己不上传，改成「你拿出去、改好贴回来」，这条也写进了使用说明。
 
 ## v0.6.0 改了什么（实测过的）
 
@@ -94,7 +117,7 @@ silero 的默认 0.5，对手机录音偏高。同一段 5 人录音里，最轻
 
 实测 5 人远场样片（20 dB / RT60 0.35 / 正常换人间隔）：自动分出 **5 人，纯度 100%**。
 
-*顺带加了个「人数」下拉*：你清楚知道自己录的是几个人，就选上（2~6 人），
+*顺带加了个「人数」下拉*：你清楚知道自己录的是几个人，就选上（1~6 人，1 就是单人），
 按人数硬分。同一个样本指定 5 人 → **5 人、纯度 100%**。已经转好的稿子改一下人数
 再点「开始转写」，**只重跑分人**（几秒），不重新识别。
 
@@ -134,7 +157,7 @@ silero 的默认 0.5，对手机录音偏高。同一段 5 人录音里，最轻
 - **单人录音勾了也没关系**：只分出一个人时标注自动去掉，导出的就是干净稿子
 - 默认开着；确定是单人朗读、讲座，关掉更快
 - 分几人不影响文字本身，只影响分段和标注
-- 左下角 **「人数」** 默认自动。自动分人最常出的错是「明明四五个人，只分出两个」——远场录音里不同人的声纹会互相靠拢，硬阈值一裁就裁掉了。你清楚知道自己录的是几个人，就选上（2 到 6 人），**按人数硬分，比任何自动判据都准**
+- 左下角 **「人数」** 默认自动。自动分人最常出的错是「明明四五个人，只分出两个」——远场录音里不同人的声纹会互相靠拢，硬阈值一裁就裁掉了。你清楚知道自己录的是几个人，就选上（1 到 6 人，1 就是单人），**按人数硬分，比任何自动判据都准**
 - 分人的取舍是**宁可多分一个人，也不把两个人糊成一个**：糊在一起改不回来，重跑一遍还是糊的；多出来的人点一下就能改名
 - 声音重叠、抢话、笑声多的时候，分人仍然可能有偏差，这是这类技术的通病；这时指定人数比自动稳得多
 
@@ -234,7 +257,7 @@ README-使用说明.md 离线版使用说明
 Gatekeeper 拦（签名要 99 美元/年），Linux 每个发行版的窗口库还得各验一遍——现在的下载量
 撑不起这份维护成本。
 
-但**源码本身是能跑的**：界面、识别、说话人、七种导出都一样，只是窗口换成系统自带的 WebView。
+但**源码本身是能跑的**：界面、识别、说话人、八种导出都一样，只是窗口换成系统自带的 WebView。
 
 ```bash
 # 1) Python 依赖
@@ -375,19 +398,45 @@ no GPU required.
 | **Speaker diarization** | Splits multi-speaker podcasts/interviews by person, labelled "Speaker 1 / 2 / 3"; automatically removed for single-speaker files |
 | **Light theme** | One click on "☀ 亮色" in the header — warm paper background plus dark text, easier in daylight, on projectors and on dim laptop screens. The dimmest text in dark mode was lifted too. The choice is remembered locally |
 | **Language lock** | Chinese is locked by default: on noise, laughter and far-field reverb the tagger sometimes guesses Japanese or Korean for Chinese audio. Suspicious segments are re-decoded as Chinese and leftover kana/hangul removed. Switch the "语种" dropdown to "自动 · 中英日韩粤" to let the model decide again |
-| **Fixed speaker count** | If you know how many people are in the recording (2–6), pick it and clustering is forced to that count — far more reliable than automatic. Changing the count re-runs diarization only, never recognition |
+| **Fixed speaker count** | If you know how many people are in the recording (1–6, 1 = solo), pick it and clustering is forced to that count — far more reliable than automatic. Changing the count re-runs diarization only, never recognition |
 | **Rename speakers** | Click "Speaker 1" → rename to "Host" / "Guest"; applies to every export format |
 | **Proofreading** | Double-click any line to hear that moment, edit in place, clear a line to drop it, `Ctrl+Z` to undo |
 | **Find & replace** | One misheard word appearing everywhere: hit "替", type the right one, "全部替换" — the whole batch reverts with one `Ctrl+Z`; leave the box empty to delete that word |
 | **Export check** | Before exporting it lists only things **nobody actually said**: punctuation-only lines, `(music)` / `(applause)` tags written into the text, and the same span decoded twice (proven by overlapping timestamps). Sentence length, stutters and verbal tics are never flagged — export as it is, and you are not interrupted when there is nothing to report |
 | **Glossary** | The same name is misheard the same way in every episode. Open 术语表 (glossary): fill the left column with the wrong word and the right column with the correct one — no arrow typing needed (the → key does not exist on most keyboards). Applied automatically after each run; one `Ctrl+Z` reverts the whole batch |
 | **Nothing gets lost** | Edit for an hour and close the app — it is fine. Each edit is saved to a local draft (never uploaded, never written beside your source files); next launch the sidebar offers "N drafts not exported yet" |
-| **7 export formats** | txt / md / Word / srt / vtt / timestamped txt / structured json |
+| **8 export formats** | txt / md / Word / srt / vtt / timestamped txt / structured json / proof copy |
 | **Batch export** | Ten finished files, pick one folder, export them all in one format; existing names are never overwritten (`-2` is appended) |
 | **Audio + video input** | mp3 m4a wav flac aac ogg opus wma; mp4 mkv mov avi flv webm ts m4v |
 | **Punctuation & paragraphs** | Built into the model — real sentences, not one unreadable wall of text |
 | **Word-level timestamps** | Subtitles precise enough for Premiere / Final Cut / Bilibili |
 | **Resumable** | Live progress with an estimated time remaining, stop anytime; toggling diarization does not re-run recognition |
+
+### v0.6.1 — what changed (measured)
+
+Reported by a user: a two-person call came back as **eight speakers**.
+
+- **The app now asks when it over-splits.** If automatic diarization finds four or
+  more speakers, a bar appears above the transcript: "5 speakers — how many are
+  really in this recording?" with two buttons ("Only one", "Two"). Clicking one
+  re-runs diarization only — **recognition is not repeated and your edits stay**.
+  Measured on a real 14-sentence monologue that auto-split into 5 speakers
+  (cluster sizes 5/4/2/2/1): after "Only one" it became a single speaker in
+  0.8 s, every label was cleared, and a sentence hand-edited beforehand was
+  untouched.
+- **"1 speaker" added to the count selector** (was 2–6), so a solo recording no
+  longer requires turning diarization off.
+- **Take the transcript out, bring it back.** "Export → proof copy" writes one
+  sentence per line as `index|speaker|text`, with no timestamps, so an external
+  tool can edit it without fighting time codes. "Export → paste corrected copy"
+  reads it back line by line and restores timing and speakers. Lines whose index
+  got lost are skipped one by one; an empty line is treated as skipped rather
+  than deleting the sentence; the whole paste is a single `Ctrl+Z`. Export
+  formats therefore go from seven to **eight**.
+
+> Why there is no built-in AI API: these recordings are interviews and phone
+> calls. Uploading them is a privacy problem and the liability would be ours.
+> The app never uploads anything — you take the text out and paste it back.
 
 ### v0.6.0 — what changed (measured)
 
@@ -487,7 +536,7 @@ unsigned macOS app is blocked by Gatekeeper (codesigning is $99/year), and every
 distribution needs its own windowing stack verified — the current download numbers do not
 justify that maintenance.
 
-The source itself does run: same UI, same recognition, same seven export formats.
+The source itself does run: same UI, same recognition, same eight export formats.
 
 ```bash
 python3 -m pip install -r requirements.txt

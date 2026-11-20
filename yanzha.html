@@ -261,6 +261,21 @@
   }
   .dd button:hover{background:var(--pop); color:var(--tx);}
   .result{flex:1; overflow-y:auto; padding:8px 20px 40px;}
+  /* 一次性提示条：分人可疑 / 术语表。转完大家都盯着右边看，所以放结果区顶上。
+     display:flex 会让 hidden 失效，所以要单独写一条 [hidden]。 */
+  .tip{display:flex; gap:10px; align-items:center; padding:9px 20px 9px 17px;
+    background:var(--acc-bg); border-bottom:1px solid var(--acc-line);
+    border-left:3px solid var(--acc);
+    font-size:12.5px; line-height:1.55; color:var(--tx2);}
+  .tip[hidden]{display:none;}
+  .tip b{color:var(--tx); font-weight:600;}
+  .tip span{flex:1;}
+  .tip .go{flex:none; border:1px solid var(--acc); color:var(--acc); background:transparent;
+    border-radius:6px; padding:3px 10px; font-size:12px; cursor:pointer; white-space:nowrap;}
+  .tip .go:hover{background:var(--acc); color:#1b1c1f;}
+  .tip .x{flex:none; border:0; background:transparent; color:var(--tx3);
+    cursor:pointer; font-size:16px; line-height:1; padding:0 2px;}
+  .tip .x:hover{color:var(--tx);}
   .result.rep-on{padding-top:52px;}    /* 替换条展开时把内容让开，别盖住第一句 */
   .spkblock{margin-bottom:6px; padding-left:2px; border-left:2px solid var(--field-line); padding-top:2px;}
   .spkname{
@@ -455,6 +470,7 @@
           <span>人数</span>
           <select id="nspk" onchange="setNspk(this.value)">
             <option value="0">自动</option>
+            <option value="1">1 人（单人）</option>
             <option value="2">2 人</option>
             <option value="3">3 人</option>
             <option value="4">4 人</option>
@@ -504,10 +520,14 @@
             <div class="dd-sep"></div>
             <button onclick="doExportAll()">全部导出到文件夹…</button>
             <button onclick="applyTerms()">按术语表改一遍</button>
+            <div class="dd-sep"></div>
+            <button onclick="doExport('proof')">校对稿（拿出去改）</button>
+            <button onclick="openProof()">粘贴改好的稿子…</button>
           </div>
         </div>
       </div>
     </div>
+    <div class="tip" id="tip" hidden></div>
     <div class="result" id="result">
       <div class="placeholder">
         <div class="big">言札</div>
@@ -534,7 +554,7 @@
 
 <script>
 let state = [], sel = -1, results = {}, busy = false, t0 = 0;
-const APP_VER = '0.6.0';
+const APP_VER = '0.6.1';
 
 const $ = id => document.getElementById(id);
 
@@ -673,6 +693,7 @@ async function start(){
 async function select(i){
   sel = i;
   renderList(state);
+  tipped();
   const r = await pywebview.api.result(i);
   results[i] = r;
   $('rtitle').textContent = r.name
@@ -969,13 +990,80 @@ const AUDIT_LABEL = {
   ghost: '这是识别器加的标注，不是谁说的话',
   overlap: '同一段被识别了两遍，时间对得上'
 };
+/* ---------- 一次性提示（分人可疑 / 术语表）---------- */
+function tipped(){
+  const box = $('tip');
+  const it = state.find(x => x.idx === sel);
+  const hs = (it && it.hints) || [];
+  const h = hs.find(x => !(it._tipOff && it._tipOff[x.kind]));
+  if (!h){ box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  if (h.kind === 'spk'){
+    box.innerHTML = `<span>自动分出 <b>${h.n}</b> 个人？这段其实几个人 ——
+      定准了重新分一次，改过的字不会丢。</span>
+      <button class="go" onclick="spkAgain(1)">只有 1 个人</button>
+      <button class="go" onclick="spkAgain(2)">是 2 人</button>
+      <button class="x" title="这一条不看了" onclick="tipOff('spk')">×</button>`;
+  } else {
+    box.innerHTML = `<span>同一个词老是错？搜到后点 <b>「替」</b>，勾上 <b>「记住」</b>，
+      以后每一期转完都自动改。</span>
+      <button class="go" onclick="terms()">打开术语表</button>
+      <button class="x" title="以后不再提示" onclick="tipOff('terms', 1)">×</button>`;
+  }
+}
+async function spkAgain(n){
+  const s = $('nspk'); if (s) s.value = String(n);
+  try { await pywebview.api.set_nspk(n); } catch (e) {}
+  $('fstate').textContent = `改成 ${n} 人，重新分人中…`;
+  await start();
+}
+async function tipOff(kind, forever){
+  const it = state.find(x => x.idx === sel);
+  if (it){ it._tipOff = it._tipOff || {}; it._tipOff[kind] = 1; }
+  if (forever){ try { await pywebview.api.tip_off(kind); } catch (e) {} }
+  tipped();
+}
+/* ---------- 拿出去改、改完粘回来 ---------- */
+function openProof(){
+  $('dd').classList.remove('on');
+  if (sel < 0) return;
+  openModal('粘贴改好的稿子', `
+    <p>先在「导出 → 校对稿」存一个 txt，拿出去改——用哪个工具都行，本程序全程不联网。</p>
+    <p class="thin">改完把整篇贴到下面。认行首的编号，<b>编号别删</b>：某几行编号弄丢了，
+       只跳过那几行，其余照常回填。说话人那一列改了不生效，要改名请到稿子左边点「改名」。</p>
+    <textarea id="proofText" spellcheck="false" style="width:100%;height:300px;margin-top:8px;
+      font-family:'Cascadia Mono',Consolas,monospace;font-size:12.5px;line-height:1.6"></textarea>
+    <p style="text-align:right;margin-top:14px">
+      <span id="proofMsg" class="thin" style="margin-right:10px"></span>
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-main" style="flex:0 0 auto;margin-left:8px;padding:0 18px"
+              onclick="doProof()">回填</button>
+    </p>`);
+  setTimeout(() => { const t = $('proofText'); if (t) t.focus(); }, 60);
+}
+async function doProof(){
+  const t = ($('proofText') || {}).value || '';
+  if (!t.trim()){ $('proofMsg').textContent = '先把改好的稿子贴进来'; return; }
+  $('proofMsg').textContent = '回填中…';
+  let r;
+  try { r = await pywebview.api.apply_proof(sel, t); }
+  catch (e) { r = { ok: false, msg: '回填失败：' + e }; }
+  $('proofMsg').textContent = r.msg || '';
+  if (r && r.ok){
+    await select(sel);
+    refreshDrafts();
+    setTimeout(closeModal, 800);
+  }
+}
 async function doExport(k){
   $('dd').classList.remove('on');
   if (sel < 0) return;
   try { localStorage.setItem('yz.lastKind', k); } catch (e) {}
   let a = null;
-  try { a = await pywebview.api.audit(sel); }
-  catch (e) { a = null; }
+  if (k !== 'proof'){          // 校对稿是拿去外面改的，不用先扫一遍
+    try { a = await pywebview.api.audit(sel); }
+    catch (e) { a = null; }
+  }
   if (a && a.ok && a.total > 0){ showAudit(a, k); return; }
   await exportNow(k, a);
 }
@@ -1240,13 +1328,18 @@ const HELP_HTML = `
   <li>同一个错字出现很多次：点搜索框右边的<b>「替」</b>，填上正确的词，「全部替换」一次改完；<b>Ctrl+Z 整批退回</b>。替换框留空 = 把这几个字删掉，删空了的句子会整句去掉</li>
   <li>点「导出」前会先扫一遍，只挑<b>根本没人说过的</b>东西：整句只剩标点、把「（音乐）（掌声）」写进正文、同一段被识别两遍（两句时间戳重叠才算）。<b>不想改也能照样导出</b>，一句问题都没有就不打扰你</li>
   <li><b>句子长短、口吃、拖音、一个词连说三遍、绕回来又讲一遍，都是原声，不会提醒你改</b>——稿子要能证明「他当时就是这么说的」</li>
+  <li>想拿出去改：点<b>「导出 → 校对稿」</b>存一份带编号的 txt，拿给任何工具改，
+      改完点<b>「导出 → 粘贴改好的稿子」</b>贴回来——按编号逐句落回，时间戳和说话人都留着。
+      程序不联网，稿子出不出这台电脑由你定；编号弄丢的行会跳过，其余照常回填</li>
 </ul>
 <h4>人多的时候：把人数选上</h4>
 <ul>
   <li>左下角<b>「人数」</b>默认自动。自动分人最常见的毛病是「明明四五个人，只分出两个」，两层原因：
       远场录音里不同人的声纹会互相靠拢；声音小的人还可能整段被判成静音、根本没进稿子
       （这一版已把判断门槛调低，轻的声音也能捞回来）。你清楚知道自己录的是几个人，
-      就选上（2~6 人），<b>按人数硬分，比任何自动判据都准</b></li>
+      就选上（1~6 人，<b>1 就是单人</b>），<b>按人数硬分，比任何自动判据都准</b></li>
+  <li>自动分出 <b>4 人以上</b>时，稿子上方会直接问你「这段其实几个人」，点一下「只有 1 个人」或「是 2 人」就重分 ——
+      不用自己去找左下角那个下拉框</li>
   <li>已经转好的稿子，改一下人数再点「开始转写」，<b>只重跑分人</b>（几秒），不会重新识别</li>
   <li>自动分人还有一个取舍：宁可多分一个人，也不把两个人糊成一个。糊在一起是改不回来的，
       多分出来的人点一下就能改名</li>

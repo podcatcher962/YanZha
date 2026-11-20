@@ -50,7 +50,7 @@ def _init_log():
 
 
 APP_TITLE = '言札'
-VERSION = '0.6.0'
+VERSION = '0.6.1'
 
 
 _init_log()
@@ -327,7 +327,7 @@ class Api:
             n = int(st.get('nspk') or 0)
         except Exception:
             n = 0
-        self._engine.n_speakers = n if 2 <= n <= 8 else 0
+        self._engine.n_speakers = n if 1 <= n <= 8 else 0
         self._clips = {}          # (path,start,dur) → data URI，重复听同一句不再调 ffmpeg
         self._undo = []           # 改字/删句的撤销栈
         self._batch_no = 0        # 「全部替换」的批次号，一次 Ctrl+Z 整批退回
@@ -350,6 +350,7 @@ class Api:
                  'progress': it['progress'], 'msg': it['msg'],
                  'duration': it['duration'], 'chars': sum(len(s.text) for s in it['sentences']),
                  'speakers': len({s.speaker for s in it['sentences'] if s.speaker}),
+                 'hints': it.get('hints') or [],
                  'error': it['error']}
                 for i, it in enumerate(self._items)]
 
@@ -476,7 +477,7 @@ class Api:
         return {'lang': v}
 
     def set_nspk(self, v):
-        """说话人数：0=自动，2~8=按人数硬分。
+        """说话人数：0=自动，1=单人（不分人），2~8=按人数硬分。
 
         很多人清清楚楚知道自己录的是几个人，这条比任何自动判据都准 ——
         自动分人最容易出的错就是「明明四五个人，只分出两个」。
@@ -485,7 +486,7 @@ class Api:
             n = int(v)
         except Exception:
             n = 0
-        n = n if 2 <= n <= 8 else 0
+        n = n if 1 <= n <= 8 else 0
         save_setting('nspk', n)
         self._engine.n_speakers = n
         log.info('说话人数：%s', n or '自动')
@@ -575,6 +576,15 @@ class Api:
                     it['msg'] = '%d 句 · %d 字%s' % (
                         len(it['sentences']),
                         sum(len(x.text) for x in it['sentences']), extra)
+                    # 自动分人最容易出的错是「分多了」：两人对话切成七八个人。
+                    # 只在参数栏挂一个「人数」下拉没人会去看，所以在这儿点一句，
+                    # 并且给一个直接改人数重跑的按钮（见 yanzha.html 的 tipped）。
+                    hints = []
+                    if nspk >= 4 and not self._engine.n_speakers:
+                        hints.append({'kind': 'spk', 'n': nspk})
+                    elif not terms_text() and not load_settings().get('terms_tip_off'):
+                        hints.append({'kind': 'terms'})
+                    it['hints'] = hints
                     log.info('转写完成 %s：%d 句 %d 字 %d 人 语种=%s',
                              it['name'], len(res['sentences']), res['chars'],
                              nspk, res.get('lang') or '-')
@@ -828,6 +838,13 @@ class Api:
                 'auto': bool(load_settings().get('terms_auto', True))}
 
     @_logged
+    def tip_off(self, kind):
+        """用户点掉某条一次性提示，以后不再出现（目前只有术语表那条）。"""
+        if kind == 'terms':
+            save_setting('terms_tip_off', 1)
+        return {'ok': True}
+
+    @_logged
     def terms_set(self, text, auto=True):
         save_setting('terms', str(text or ''))
         save_setting('terms_auto', bool(auto))
@@ -1075,6 +1092,63 @@ class Api:
         return {'ok': False, 'msg': '没有可撤销的'}
 
     @_logged
+    def apply_proof(self, idx, text):
+        """把外部改好的校对稿按编号写回句子。整批算一次撤销。
+
+        用户把稿子复制出去、用别的工具改完再粘回来 —— 这条路是刻意留的：
+        程序自己不联网，改由用户自己拿出去改，隐私和责任都留在他那一边。
+        """
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有内容'}
+        it = self._items[idx]
+        sents = it['sentences']
+        if not sents:
+            return {'ok': False, 'msg': '这个文件还没转完'}
+        rows = it.get('raw') or []
+        old = [(s.start, s.end, s.text, s.speaker, self._raw_index(it, s))
+               for s in sents]
+        changed, bad, empty, unknown = C.apply_proof(sents, text)
+        if not changed:
+            msg = '没有可回填的改动'
+            if bad:
+                msg += '（%d 行格式不认，检查是不是把「编号|说话人|正文」的竖线删了）' % bad
+            return {'ok': False, 'msg': msg, 'changed': 0,
+                    'bad': bad, 'empty': empty, 'unknown': unknown}
+        entries = []
+        for k, (st, en, tx, spk, ri) in enumerate(old):
+            if k >= len(sents):
+                break
+            new_t = sents[k].text
+            if new_t == tx:
+                continue
+            entries.append({
+                'idx': idx, 'si': k, 'deleted': False,
+                'sent': C.Sentence(st, en, tx, spk),
+                'raw_i': ri,
+                'raw_row': rows[ri] if 0 <= ri < len(rows) else None,
+            })
+            if 0 <= ri < len(rows):        # 同步回 raw，回头重跑分人时字还在
+                rows[ri] = (rows[ri][0], rows[ri][1], new_t)
+        if entries:
+            self._undo.append({'idx': idx, 'items': entries})
+            while len(self._undo) > 300:
+                self._undo.pop(0)
+        self._touch(idx)
+        log.info('回填校对稿：改 %d 句，不认 %d 行，空 %d 行，越界 %d 行',
+                 changed, bad, empty, unknown)
+        msg = '回填了 %d 句' % changed
+        if bad:
+            msg += '，%d 行格式不认已跳过' % bad
+        if empty:
+            msg += '，%d 行是空的没动' % empty
+        if unknown:
+            msg += '，%d 行编号对不上' % unknown
+        return {'ok': True, 'msg': msg, 'changed': changed, 'bad': bad,
+                'empty': empty, 'unknown': unknown,
+                'left': len(sents),
+                'chars': sum(len(x.text) for x in sents)}
+
+    @_logged
     def export(self, idx, kind, path=None):
         if not (0 <= idx < len(self._items)):
             return {'ok': False, 'msg': '没有内容'}
@@ -1083,7 +1157,10 @@ class Api:
             return {'ok': False, 'msg': '这个文件还没转完'}
         stem = os.path.splitext(it['name'])[0]
         ext = {'txt': 'txt', 'srt': 'srt', 'vtt': 'vtt', 'md': 'md',
-               'docx': 'docx', 'tsv': 'txt', 'json': 'json'}[kind]
+               'docx': 'docx', 'tsv': 'txt', 'json': 'json',
+               'proof': 'txt'}[kind]
+        if kind == 'proof':
+            stem += '-校对稿'      # 别和正式稿同名，改完分不清哪个是哪个
         if not path:
             try:
                 path = ND.save_file('导出为', [('%s 文件' % ext.upper(), '*.%s' % ext)],
@@ -1117,6 +1194,8 @@ class Api:
             return C.to_json(sents, meta)
         if kind == 'tsv':
             return C.to_tsv(sents)
+        if kind == 'proof':
+            return C.to_proof(sents, meta)
         return C.to_txt(sents, meta)
 
     def _write(self, idx, kind, path, meta=''):
@@ -1155,7 +1234,8 @@ class Api:
         if not d:
             return {'ok': False, 'msg': '已取消'}
         ext = {'txt': 'txt', 'srt': 'srt', 'vtt': 'vtt', 'md': 'md',
-               'docx': 'docx', 'tsv': 'txt', 'json': 'json'}[kind]
+               'docx': 'docx', 'tsv': 'txt', 'json': 'json',
+               'proof': 'txt'}[kind]
         n = fail = 0
         for i in done:
             stem = os.path.splitext(self._items[i]['name'])[0]
