@@ -1,6 +1,6 @@
 # 言札 · YanZha
 
-**v0.6.1** · 2026-11-20
+**v0.6.2** · 2026-11-20
 
 把录音、播客、会议、视频，变成能直接用的文字稿。
 
@@ -42,6 +42,7 @@ Cantonese), speaker diarization, glossary, 8 export formats. Windows x64, MIT.*
 | **校对改字** | 双击句子听原音，就地改字、删句、撤销，改完直接导出 |
 | **查找替换** | 一个错词满篇都是：「替」→ 填正确的词 →「全部替换」一次改完，`Ctrl+Z` 整批退回；替换框留空即删掉这个词 |
 | **术语表** | 同一个人名、书名、公司名，在同一个人的每一期里都错成同一样子。右上角「术语表」填左右两栏（左＝错的词，右＝改成什么），**不用敲箭头**，转完自动改掉；改错了 `Ctrl+Z` 整批退回。更省事：在稿子上用「替」改对后勾上替换条里的**「记住」**，这条替换自动进表 |
+| **读音校对** | 只知道正确写法的字（"张小燕"不知道被写成啥），只写对的就行：软件按**拼音**去稿子里找读音对得上、字却不一样的地方，列成清单逐条勾选，`an/ang`、`z/zh`、`l/n` 这类口音差异也认。**不勾就不改一个字** |
 | **稿子不会丢** | 改到一半直接关程序也不丢：改完随时存一份本机草稿（不上传、不进源文件夹），下次打开左栏提示「有 N 份没导出的稿子」，点一下接着改 |
 | **导出前检查** | 点导出时先扫一遍，只报**根本没人说过的**东西：只剩标点的空壳句、（音乐）（掌声）这类标注、同一段被识别两遍（按时间戳重叠判定）。句子长短、口头重复一概不管——不改也能照样导；真没问题就不弹窗 |
 | **八种导出** | txt / md / Word / srt / vtt / 带时间戳 txt / 结构化 json / 校对稿 |
@@ -54,6 +55,51 @@ Cantonese), speaker diarization, glossary, 8 export formats. Windows x64, MIT.*
 | **可中断** | 进度实时、还剩几分钟也一起算给你；随时能停；改「区分说话人」勾选不用重跑识别 |
 
 ---
+
+## v0.6.2 改了什么（实测过的）
+
+这条还是接着上面那位用户：他要「能自动改错字的 AI」，又说不出错成什么样——
+真实情况是他只知道**"张小燕"这三个字怎么写**，不知道模型写成"张晓燕"还是"张小艳"。
+术语表要求先填"错的样子"，这一步他填不出来。
+
+**新增「读音校对」** — 右上角一个按钮。这次**只写正确的写法**，一行一个：
+
+```
+张小燕
+同济路
+嘉立创
+```
+
+点「看看会改哪儿」，软件把稿子里**读音对得上、字却不一样**的地方全找出来，
+一条条列成「第 8 句 张晓燕 → 张小燕（同音 1.00）」，逐条勾选，
+点「改勾选的」才动——**默认一个字都不改**，也不会背着你改。
+改完一次 `Ctrl+Z` 整批退回，草稿同步回退。
+
+近音也认：`an/ang`、`z/zh`、`l/n`、前后鼻音这类口音差异按权重降分，不直接判死。
+实测「桶吉路 → 同济路」相似度 0.91 也能命中。
+
+**本版实测**（脚本 `_tmp/test_terms.py`、`_tmp/test_harm.py`、`_tmp/test_speed.py`）：
+
+| 项目 | 结果 |
+|---|---|
+| 注入 4 处错字（同音/近音混合） | **4 处全中**，同音 1.00、近音 0.98 / 0.91 |
+| 误伤压力测试（10 个常用词 + 168 个三字片段扫真实稿） | **0 处误改** |
+| 扫描速度 | 一万字 **0.41 秒**（一小时录音约一万字，等于没耗时） |
+| 安装包增量 | 43,788,405 → 44,641,122 B，**+852 KB（+1.9%）** |
+| 真稿验证 | 53.6 秒真实录音转写稿，未加词表时零改动 |
+
+**为什么不做「AI 自动润色」** — 试过了，数据不支持。市面上最贴这件事的开源模型是
+`shibing624/macbert4csc-base-chinese`（110M，专修同音形近字）。实测 int8 版：
+真实稿子上**只抓对 1 处**（"演都"→"演得"），**还改错 1 处**（"他的"→"她的"）。
+体积代价却是 **+206 MB**（42.6 → 239 MiB），因为 onnxruntime 自己就吃掉一百多兆。
+更关键的是它没有"这个位置到底有没有错"的检测头，只能靠概率门控硬压，
+压到不误伤的时候，真错也基本抓不到了。
+
+词表这条路没有这些问题：**纯本地、零幻觉、毫秒级、可解释**——改了就是改了，
+没写进表里就一个字不动，出了问题能查出是哪条规则干的。
+
+> 读音校对只解决"读音对、字写错"。意思写错但读音也对的（"守法"其实是"犯法"），
+> 软件不猜，必须人来判断——这条也写进了使用说明。
 
 ## v0.6.1 改了什么（实测过的）
 
@@ -404,6 +450,7 @@ no GPU required.
 | **Find & replace** | One misheard word appearing everywhere: hit "替", type the right one, "全部替换" — the whole batch reverts with one `Ctrl+Z`; leave the box empty to delete that word |
 | **Export check** | Before exporting it lists only things **nobody actually said**: punctuation-only lines, `(music)` / `(applause)` tags written into the text, and the same span decoded twice (proven by overlapping timestamps). Sentence length, stutters and verbal tics are never flagged — export as it is, and you are not interrupted when there is nothing to report |
 | **Glossary** | The same name is misheard the same way in every episode. Open 术语表 (glossary): fill the left column with the wrong word and the right column with the correct one — no arrow typing needed (the → key does not exist on most keyboards). Applied automatically after each run; one `Ctrl+Z` reverts the whole batch |
+| **Reading-match proofreading** | When you only know how a name is *spelled* (but not how the model mangled it), write just the correct form: the app matches by **pinyin** and lists every spot whose reading matches but whose characters differ. Accent pairs like `an/ang`, `z/zh`, `l/n` are tolerated. Nothing changes unless you tick it |
 | **Nothing gets lost** | Edit for an hour and close the app — it is fine. Each edit is saved to a local draft (never uploaded, never written beside your source files); next launch the sidebar offers "N drafts not exported yet" |
 | **8 export formats** | txt / md / Word / srt / vtt / timestamped txt / structured json / proof copy |
 | **Batch export** | Ten finished files, pick one folder, export them all in one format; existing names are never overwritten (`-2` is appended) |
@@ -411,6 +458,56 @@ no GPU required.
 | **Punctuation & paragraphs** | Built into the model — real sentences, not one unreadable wall of text |
 | **Word-level timestamps** | Subtitles precise enough for Premiere / Final Cut / Bilibili |
 | **Resumable** | Live progress with an estimated time remaining, stop anytime; toggling diarization does not re-run recognition |
+
+### v0.6.2 — what changed (measured)
+
+Same user as above. He wanted "an AI that fixes the typos", but could not say how they
+were misspelled — what he actually knows is how **"张小燕" is written**, not whether the
+model produced "张晓燕" or "张小艳". The existing glossary needs the *wrong* form typed in
+first, and that is exactly the part he cannot supply.
+
+**New: reading-match proofreading (读音校对).** One button in the header. This time you
+write **only the correct forms**, one per line:
+
+```
+张小燕
+同济路
+嘉立创
+```
+
+Click "看看会改哪儿" and every place in the transcript whose **pronunciation matches but
+whose characters differ** is listed as "line 8: 张晓燕 → 张小燕 (homophone 1.00)". Tick the
+ones you want, then confirm — **nothing is changed by default**, and it never edits behind
+your back. One `Ctrl+Z` reverts the batch together with the draft.
+
+Near-homophones are accepted too: `an/ang`, `z/zh`, `l/n` and front/back nasal pairs are
+scored with a weight rather than rejected outright — "桶吉路 → 同济路" was caught at 0.91.
+
+**What was actually tested** (`_tmp/test_terms.py`, `_tmp/test_harm.py`, `_tmp/test_speed.py`):
+
+| Item | Result |
+|---|---|
+| 4 injected typos (homophone + near-homophone) | **All 4 caught** — 1.00, 0.98, 0.91 |
+| False-positive stress test (10 common words + 168 three-char fragments over a real transcript) | **0 wrong edits** |
+| Scanning speed | 10,000 characters in **0.41 s** (an hour of speech is roughly that, i.e. no perceptible cost) |
+| Installer growth | 43,788,405 → 44,641,122 bytes, **+852 KB (+1.9%)** |
+| Real transcript | no word list attached → zero changes, as expected |
+
+**Why there is no "AI polishing".** It was measured, and the numbers did not support it.
+The closest open model is `shibing624/macbert4csc-base-chinese` (110M, tuned for
+homophone/shape errors). On a real transcript its int8 export **caught exactly 1 real typo**
+("演都"→"演得") and **introduced 1 new error** ("他的"→"她的"). The size cost was **+206 MB**
+(42.6 → 239 MiB) because onnxruntime alone is over a hundred megabytes. It also has no
+"is this position wrong?" detection head, so it can only be gated by probabilities — and
+once gated hard enough to stop the false edits, it stops finding the real ones too.
+
+A word list has none of these problems: **fully local, zero hallucination, millisecond
+fast, explainable** — a change is a change, nothing outside the list is touched, and any
+result can be traced to one rule.
+
+> Reading-match proofreading only fixes "right sound, wrong character". Errors that read
+> correctly but mean the wrong thing ("守法" where "犯法" was said) are left alone — the
+> software does not guess meaning.
 
 ### v0.6.1 — what changed (measured)
 
@@ -587,4 +684,4 @@ compliance table and [`licenses/`](licenses/) for the full text.
 **© 永远的兰兰 · Lanlan Eternal**
 
 仓库 / Repository：https://github.com/podcatcher962/YanZha
-版本 / Version：v0.6.0 · 2026-11-19
+版本 / Version：v0.6.2 · 2026-11-20

@@ -29,6 +29,12 @@
 - 来源：https://github.com/python-openxml/python-docx
 - 许可：**MIT**
 
+### pypinyin
+- 用途：把汉字转成拼音，用于「读音校对」里按读音找回被写错的专名
+- 来源：https://github.com/mozillazg/python-pinyin
+- 许可：**MIT**
+- 说明：只在本机做字符串比对，不联网、不调用任何服务
+
 ### PyInstaller
 - 用途：打包为单文件 exe（仅在构建时使用，运行时不额外分发其源码）
 - 来源：https://github.com/pyinstaller/pyinstaller

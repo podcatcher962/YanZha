@@ -54,6 +54,8 @@ def main():
          '--hidden-import', 'webview.platforms.edgechromium',
          '--hidden-import', 'docx',
          '--collect-binaries', 'sherpa_onnx',
+         # 拼音表是 .py + 数据文件，不 collect-data 打进去会运行时报找不到
+         '--collect-data', 'pypinyin',
          # 这些一个都用不上，带上只是白占体积
          '--exclude-module', 'tkinter',
          '--exclude-module', 'unittest',

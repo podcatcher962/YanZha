@@ -421,6 +421,21 @@
     margin-top:3px; background:transparent; border:1px dashed var(--tadd); color:var(--tx2);
     border-radius:7px; padding:6px 13px; font-size:12px; cursor:pointer; font-family:inherit;
   }
+  /* 读音校对：扫描出来的改动，逐条勾选 */
+  .sbtns{display:flex; gap:8px; margin:10px 0 4px;}
+  .sbtns .btn{flex:0 0 auto; padding:0 14px;}
+  .sbad{color:var(--warn, #b06a12); font-size:11.5px; line-height:1.6; margin-top:6px;}
+  .shd{font-size:12px; color:var(--tx3); margin:12px 0 8px;}
+  .srow{
+    display:grid; grid-template-columns:16px 1fr; gap:9px; align-items:start;
+    background:var(--field2); border-radius:7px; padding:8px 10px; margin-bottom:6px;
+    cursor:pointer;
+  }
+  .srow input{margin:3px 0 0 0;}
+  .smeta{display:block; font-size:11px; color:var(--tx3); margin-bottom:2px;}
+  .sdiff{display:block; font-size:12.5px; color:var(--tx); word-break:break-all;}
+  .sdiff b{color:var(--acc); font-weight:500;}
+  .sctx{display:block; font-size:11.5px; color:var(--tx3); margin-top:3px; word-break:break-all;}
   .tadd:hover{border-color:var(--acc); color:var(--acc);}
 </style>
 </head>
@@ -434,6 +449,7 @@
   <div class="badge" id="badge">模型就绪</div>
   <button class="menu-btn" id="btnTheme" onclick="toggleTheme()" title="切换到亮色">☀ 亮色</button>
   <button class="menu-btn" onclick="terms()">术语表</button>
+  <button class="menu-btn" onclick="sound()">读音校对</button>
   <button class="menu-btn" onclick="help()">使用说明</button>
   <button class="menu-btn" onclick="about()">关于</button>
 </header>
@@ -520,6 +536,7 @@
             <div class="dd-sep"></div>
             <button onclick="doExportAll()">全部导出到文件夹…</button>
             <button onclick="applyTerms()">按术语表改一遍</button>
+            <button onclick="sound()">按读音再校一遍…</button>
             <div class="dd-sep"></div>
             <button onclick="doExport('proof')">校对稿（拿出去改）</button>
             <button onclick="openProof()">粘贴改好的稿子…</button>
@@ -554,7 +571,7 @@
 
 <script>
 let state = [], sel = -1, results = {}, busy = false, t0 = 0;
-const APP_VER = '0.6.1';
+const APP_VER = '0.6.2';
 
 const $ = id => document.getElementById(id);
 
@@ -1240,6 +1257,101 @@ async function applyTerms(){
   else $('fstate').textContent = (r && r.msg) || '没改成';
 }
 
+/* ---------- 读音校对：只写正确写法，软件按读音找错字 ---------- */
+/* 和术语表分工：术语表要你写清「错的写法」，写死精确替换；
+   这里只要正确写法，剩下所有近音写法由软件自己找。
+   找到的一律先列出来，勾选后才改——录音稿不许背着人动。 */
+let sHits = [];
+
+async function sound(){
+  let r = {text: '', n: 0, words: []};
+  try { r = await pywebview.api.sound_get(); } catch(e){}
+  sHits = [];
+  const dis = (typeof sel === 'number' && sel >= 0) ? '' : 'disabled';
+  openModal('读音校对', `
+    <p>只写<strong>正确的写法</strong>，软件自己按读音去稿子里找被写错的字。</p>
+    <p class="thin">一行一个。人名、地名、公司名、行话都行。
+       跟术语表的区别：术语表要你写清「错的写法」，这里只要对的样子。</p>
+    <textarea id="sTxt" rows="7" spellcheck="false"
+              placeholder="张小燕&#10;同济路&#10;曾国藩">${esc(r.text || '')}</textarea>
+    <div class="sbad" id="sBad"></div>
+    <div class="sbtns">
+      <button class="btn btn-ghost" onclick="sSuggest()" ${dis}>从这份稿子里挑几个</button>
+      <button class="btn btn-ghost" onclick="sScan()" ${dis}>看看会改哪儿</button>
+    </div>
+    <div id="sList"></div>
+  `);
+}
+
+async function sSuggest(){
+  const r = await pywebview.api.sound_suggest(sel);
+  const ws = (r && r.words) || [];
+  const bx = $('sBad');
+  if (!ws.length){ if (bx) bx.textContent = '这份稿子里挑不出明显的专名'; return; }
+  const t = $('sTxt');
+  const have = new Set((t.value || '').split(/\s+/).filter(Boolean));
+  const add = ws.filter(w => !have.has(w));
+  t.value = ((t.value || '').trim() ? (t.value || '').trim() + '\n' : '') + add.join('\n');
+  if (bx) bx.textContent = `加了 ${add.length} 个候选，把不是人名的删掉，再点「看看会改哪儿」`;
+}
+
+async function sScan(){
+  const t = $('sTxt');
+  const s = await pywebview.api.sound_set(t ? t.value : '');
+  const bx = $('sBad');
+  if (bx) bx.textContent = (s && s.bad && s.bad.length) ? s.bad.join('；') : '';
+  if (!s || !s.n){
+    if ($('sList')) $('sList').innerHTML = '<p class="thin">词表是空的，先写几个。</p>';
+    return;
+  }
+  let r = null;
+  try { r = await pywebview.api.sound_scan(sel); } catch(e){}
+  if (!r || !r.ok){
+    if ($('sList')) $('sList').innerHTML = `<p class="thin">${esc((r && r.msg) || '没扫成')}</p>`;
+    return;
+  }
+  sHits = r.hits || [];
+  sRender();
+}
+
+function sRender(){
+  const box = $('sList');
+  if (!box) return;
+  if (!sHits.length){
+    box.innerHTML = '<p class="thin">这份稿子里没找到需要改的地方。</p>';
+    return;
+  }
+  const rows = sHits.map((h, i) => `
+    <label class="srow">
+      <input type="checkbox" class="sc" data-k="${i}" checked>
+      <span>
+        <span class="smeta">第 ${h.si + 1} 句 · ${esc(h.how)} · ${esc(h.term)}</span>
+        <span class="sdiff">${esc(h.old)} → <b>${esc(h.new)}</b></span>
+        <span class="sctx">${esc(h.after)}</span>
+      </span>
+    </label>`).join('');
+  box.innerHTML = `<p class="shd">找到 ${sHits.length} 处，勾掉不想改的</p>` + rows + `
+    <p style="text-align:right;margin-top:14px">
+      <button class="btn btn-main" style="flex:0 0 auto;padding:0 18px"
+              onclick="sApply()">改勾选的这些</button>
+    </p>`;
+}
+
+async function sApply(){
+  const picks = [];
+  document.querySelectorAll('#sList .sc').forEach(x => { if (x.checked) picks.push(+x.dataset.k); });
+  if (!picks.length) return;
+  let r = null;
+  try { r = await pywebview.api.sound_apply(sel, picks); } catch(e){}
+  closeModal();
+  if (r && r.ok){
+    if (sel >= 0) await select(sel);
+    $('fstate').textContent = r.msg || '改好了';
+  } else {
+    $('fstate').textContent = (r && r.msg) || '没改成';
+  }
+}
+
 /* ---------- 没导出的草稿 ---------- */
 let draftCache = [];
 async function refreshDrafts(){
@@ -1361,6 +1473,15 @@ const HELP_HTML = `
   <li>默认<b>转完自动套用</b>，状态栏会写「术语 3 处」；改错了 <code>Ctrl+Z</code> 整批退回</li>
   <li>同一个主播的人名、栏目名、公司名，写一次，往后每一期都省掉这一段</li>
   <li>不想自动改就把勾去掉，之后在「导出」菜单里点<b>「按术语表改一遍」</b></li>
+</ul>
+<h4>读音校对：只写对的，软件自己找错的</h4>
+<ul>
+  <li>术语表的短板是：<b>你得先知道它错成什么样</b>。可现实是你只知道"张小燕"这三个字怎么写，不知道模型写成"张晓燕"还是"张小艳"</li>
+  <li>点右上角<b>「读音校对」</b>，这次<b>只写正确的写法</b>，一行一个，然后点「看看会改哪儿」</li>
+  <li>软件按<b>拼音</b>去找：读音对得上、字却不一样的地方全部列出来，写明第几句、原来是什么、改成什么、像到什么程度</li>
+  <li>逐条勾选，点「改勾选的」才动——<b>不勾就一个字都不改</b>。改完 <code>Ctrl+Z</code> 整批退回</li>
+  <li>近音也认：<code>an/ang</code>、<code>z/zh</code>、<code>l/n</code>、前后鼻音这类口音差异按权重降分，不直接判死</li>
+  <li>它只解决"读音对、字写错"。意思写错但读音也对的（"守法"其实是"犯法"），软件不猜，得人来判断</li>
 </ul>
 <h4>稿子不会丢</h4>
 <ul>

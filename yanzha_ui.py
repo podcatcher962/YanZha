@@ -50,7 +50,7 @@ def _init_log():
 
 
 APP_TITLE = '言札'
-VERSION = '0.6.1'
+VERSION = '0.6.2'
 
 
 _init_log()
@@ -279,6 +279,7 @@ def _threadhook(a):
 threading.excepthook = _threadhook
 
 import yanzha_core as C          # noqa: E402
+import yanzha_terms as H         # noqa: E402
 import native_dialog as ND       # noqa: E402
 
 EXPORT_KINDS = [('txt', '纯文本 .txt'), ('srt', '字幕 .srt'), ('vtt', '字幕 .vtt'),
@@ -918,6 +919,126 @@ class Api:
                 'msg': '按术语表改了 %d 处（%d 句）' % (r['occ'], r['n']),
                 'left': len(self._items[idx]['sentences']),
                 'chars': sum(len(x.text) for x in self._items[idx]['sentences'])}
+
+    # ---------------- 读音词表：只写正确写法，软件自己按读音找错字
+    # 和上面那张术语表分工不同：
+    #   术语表   = 用户明确知道「李蛋」这个错法，写死，精确替换；
+    #   读音词表 = 用户只知道正确写法（张小燕），剩下所有近音写法由软件自己找。
+    # 两张表都不改写句子结构，只换字，且都进同一个撤销栈。
+    def _sound_words(self):
+        txt = load_settings().get('terms_sound')
+        txt = txt if isinstance(txt, str) else ''
+        words, bad = H.parse_terms(txt)
+        return words, bad, txt
+
+    @_logged
+    def sound_get(self):
+        words, bad, txt = self._sound_words()
+        return {'ok': True, 'text': txt, 'n': len(words),
+                'words': [w.text for w in words], 'bad': bad}
+
+    @_logged
+    def sound_set(self, text):
+        save_setting('terms_sound', str(text or ''))
+        words, bad, _ = self._sound_words()
+        log.info('读音词表存了 %d 条', len(words))
+        return {'ok': True, 'n': len(words), 'bad': bad}
+
+    def _sound_hits(self, idx):
+        if not (0 <= idx < len(self._items)):
+            return [], []
+        words, _bad, _t = self._sound_words()
+        if not words:
+            return [], []
+        return H.scan(self._items[idx]['sentences'], words), words
+
+    @_logged
+    def sound_scan(self, idx):
+        """只看会改哪些地方，一个字节都不动。给用户逐条确认用。"""
+        hits, words = self._sound_hits(idx)
+        if not words:
+            return {'ok': False, 'msg': '读音词表还是空的', 'n': 0, 'hits': []}
+        sents = self._items[idx]['sentences'] if 0 <= idx < len(self._items) else []
+        out = []
+        for k, h in enumerate(hits):
+            body = sents[h.index].text if 0 <= h.index < len(sents) else ''
+            out.append({'k': k, 'si': h.index, 'old': h.old, 'new': h.new,
+                        'term': h.term, 'how': h.how, 'score': round(h.score, 2),
+                        'before': body,
+                        'after': body[:h.start] + h.new + body[h.end:]})
+        return {'ok': True, 'n': len(out), 'hits': out, 'words': len(words)}
+
+    @_logged
+    def sound_suggest(self, idx):
+        """从稿子里挑几个「像专名」的词，给读音词表当草稿。"""
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有内容', 'words': []}
+        got = H.suggest_terms(self._items[idx]['sentences'], limit=30)
+        have = set(w.text for w in self._sound_words()[0])
+        return {'ok': True, 'words': [w for w in got if w not in have]}
+
+    @_logged
+    def sound_apply(self, idx, picks=None):
+        """按读音改字。picks 是要接受的下标列表，None 表示全接受。
+
+        整批只占一个撤销位——改了十处按一次 Ctrl+Z 就全回来。
+        """
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有内容'}
+        hits, words = self._sound_hits(idx)
+        if not words:
+            return {'ok': False, 'msg': '读音词表还是空的'}
+        if picks is not None:
+            want = set()
+            for p in picks:
+                try:
+                    want.add(int(p))
+                except Exception:
+                    pass
+            hits = [h for i, h in enumerate(hits) if i in want]
+        if not hits:
+            return {'ok': True, 'n': 0, 'occ': 0, 'msg': '没有选中任何一条'}
+
+        it = self._items[idx]
+        sents = it['sentences']
+        rows = it.get('raw') or []
+        by_sent = {}
+        for h in hits:
+            by_sent.setdefault(h.index, []).append(h)
+
+        entries = []
+        occ = 0
+        for si, hs in by_sent.items():
+            if not (0 <= si < len(sents)):
+                continue
+            s = sents[si]
+            old_text = s.text
+            t = old_text
+            for h in sorted(hs, key=lambda x: -x.start):
+                if t[h.start:h.end] != h.old:      # 位置对不上就不硬改
+                    continue
+                t = t[:h.start] + h.new + t[h.end:]
+                occ += 1
+            if t == old_text:
+                continue
+            ri = self._raw_index(it, s)
+            entries.append({
+                'idx': idx, 'si': si, 'deleted': False,
+                'sent': C.Sentence(s.start, s.end, old_text, s.speaker),
+                'raw_i': ri,
+                'raw_row': rows[ri] if 0 <= ri < len(rows) else None,
+            })
+            s.text = t
+            if 0 <= ri < len(rows):
+                rows[ri] = (rows[ri][0], rows[ri][1], t)
+
+        if entries:
+            self._push_undo({'idx': idx, 'items': entries})
+        self._touch(idx)
+        log.info('读音词表改字：%d 处 / %d 句', occ, len(entries))
+        return {'ok': True, 'n': len(entries), 'occ': occ,
+                'msg': '按读音改了 %d 处（%d 句）' % (occ, len(entries)),
+                'left': len(sents), 'chars': sum(len(x.text) for x in sents)}
 
     # ---------------- 草稿
     def _touch(self, idx):
