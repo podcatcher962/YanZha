@@ -50,7 +50,7 @@ def _init_log():
 
 
 APP_TITLE = '言札'
-VERSION = '0.6.2'
+VERSION = '0.7.0'
 
 
 _init_log()
@@ -569,6 +569,10 @@ class Api:
                                           'ko': '한국어', 'yue': '粤语'}.get(lg, lg)
                     if res.get('dropped'):
                         extra += ' · 清掉 %d 处外语误字' % res['dropped']
+                    # 重跑分人是整批重算，手改过的归属会被盖掉，得说一声
+                    if it.get('spk_manual'):
+                        extra += ' · 手动改的 %d 句人已按新结果重算' % int(it['spk_manual'])
+                        it['spk_manual'] = 0
                     # 术语表：用户自己声明过的错词，转完直接改掉，不用再搜一遍
                     if load_settings().get('terms_auto', True) and terms_text():
                         tr = self._apply_terms(i)
@@ -724,6 +728,117 @@ class Api:
                 'left': len(sents),
                 'chars': sum(len(x.text) for x in sents)}
 
+    # ---------------- 结构编辑：换人 / 拆句 / 合并
+    # 一句只能挂一个说话人。两个人被并进一句，或者整句归错人，都在这里救。
+    @_logged
+    def set_sent_speaker(self, idx, si, spk):
+        """改「这一句是谁说的」。整组改名走 rename_speaker，这里只动一句。"""
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有内容'}
+        it = self._items[idx]
+        sents = it['sentences']
+        if not (0 <= si < len(sents)):
+            return {'ok': False, 'msg': '没有这一句'}
+        s = sents[si]
+        old = getattr(s, 'speaker', '') or ''
+        new = str(spk or '').strip()[:24]
+        n_spk = len({x.speaker for x in sents if x.speaker})
+        if new == old:
+            return {'ok': True, 'changed': False, 'speaker': old, 'speakers': n_spk}
+        rows = it.get('raw') or []
+        ri = self._raw_index(it, s)
+        self._push_undo({'idx': idx, 'si': si, 'deleted': False,
+                         'sent': C.Sentence(s.start, s.end, s.text, s.speaker),
+                         'raw_i': ri,
+                         'raw_row': rows[ri] if 0 <= ri < len(rows) else None})
+        s.speaker = new
+        it['spk_manual'] = int(it.get('spk_manual') or 0) + 1
+        self._touch(idx)
+        log.info('单句改人 [%d:%d] %r → %r', idx, si, old, new)
+        return {'ok': True, 'changed': True, 'speaker': new,
+                'speakers': len({x.speaker for x in sents if x.speaker})}
+
+    @_logged
+    def split_sent(self, idx, si, pos, spk_after=None, text=None):
+        """在 pos 处把一句拆成两句；后半句可以顺手指定是谁。
+
+        text 传了就先按它改这一句的字再拆：用户在断句框里顺手改了错字，
+        不该让 Ctrl+Z 要按两次才退得回去。
+        """
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有内容'}
+        it = self._items[idx]
+        sents = it['sentences']
+        if not (0 <= si < len(sents)):
+            return {'ok': False, 'msg': '没有这一句'}
+        s = sents[si]
+        src = C.Sentence(s.start, s.end, s.text, s.speaker)   # 拆之前的原样
+        nt = ' '.join(str(text or '').split()) if text is not None else ''
+        if nt and nt != s.text:
+            s.text = nt
+        pair = C.split_sentence(s, pos)
+        if not pair:
+            s.text = src.text                                 # 没拆成就别留半截改字
+            return {'ok': False, 'msg': '切点太靠边了，往中间挪一点'}
+        a, b = pair
+        tail = str(spk_after or '').strip()[:24]
+        if tail:
+            b.speaker = tail
+        rows = it.get('raw') or []
+        ri = self._raw_index(it, src)
+        self._push_undo({'kind': 'split', 'idx': idx, 'si': si, 'sent': src,
+                         'raw_i': ri,
+                         'raw_row': (src.start, src.end, src.text)
+                                    if 0 <= ri < len(rows) else None})
+        sents[si] = a
+        sents.insert(si + 1, b)
+        if 0 <= ri < len(rows):        # raw 一起拆，否则重跑分人会把拆出来的行吞掉
+            rows[ri] = (a.start, a.end, a.text)
+            rows.insert(ri + 1, (b.start, b.end, b.text))
+        if tail:
+            it['spk_manual'] = int(it.get('spk_manual') or 0) + 1
+        self._touch(idx)
+        log.info('拆句 [%d:%d] pos=%d → %r | %r', idx, si, pos, a.text[:20], b.text[:20])
+        return {'ok': True, 'si': si, 'left': len(sents),
+                'speakers': len({x.speaker for x in sents if x.speaker}),
+                'msg': '已拆成两句'}
+
+    @_logged
+    def merge_sent(self, idx, si):
+        """把这一句和下一句并成一句（识别器把一句话切成两半时用）。"""
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有内容'}
+        it = self._items[idx]
+        sents = it['sentences']
+        if not (0 <= si < len(sents) - 1):
+            return {'ok': False, 'msg': '后面没有句子了'}
+        a, b = sents[si], sents[si + 1]
+        m = C.merge_pair(a, b)
+        rows = it.get('raw') or []
+        ri, rj = self._raw_index(it, a), self._raw_index(it, b)
+        self._push_undo({'kind': 'merge', 'idx': idx, 'si': si,
+                         'sent': C.Sentence(a.start, a.end, a.text, a.speaker),
+                         'sent2': C.Sentence(b.start, b.end, b.text, b.speaker),
+                         'raw_i': ri, 'raw_i2': rj,
+                         'raw_row': rows[ri] if 0 <= ri < len(rows) else None,
+                         'raw_row2': rows[rj] if 0 <= rj < len(rows) else None})
+        sents[si] = m
+        sents.pop(si + 1)
+        if ri >= 0 and rj >= 0 and ri != rj:
+            rows.pop(max(ri, rj))
+            rows[min(ri, rj)] = (m.start, m.end, m.text)
+        elif ri >= 0:
+            rows[ri] = (m.start, m.end, m.text)
+        elif rj >= 0:
+            rows[rj] = (m.start, m.end, m.text)
+        self._touch(idx)
+        diff = (a.speaker or '') != (b.speaker or '')
+        log.info('合并 [%d:%d] %r + %r', idx, si, a.text[:20], b.text[:20])
+        return {'ok': True, 'si': si, 'left': len(sents),
+                'speakers': len({x.speaker for x in sents if x.speaker}),
+                'msg': '已合并成一句' + ('（两句不是同一个人，按前一句算；Ctrl+Z 可退回）'
+                                      if diff else '（Ctrl+Z 可退回）')}
+
     def _push_undo(self, e):
         """记一条撤销（改字 / 删句），栈满就丢最老的。"""
         self._undo.append(e)
@@ -737,6 +852,28 @@ class Api:
         rows = it.get('raw') or []
         si = u['si']
         row = u.get('raw_row')
+        kind = u.get('kind')
+        if kind == 'split':
+            if 0 <= si + 1 < len(sents):       # 后一句去掉
+                sents.pop(si + 1)
+            if 0 <= si < len(sents):           # 前一句还原成拆之前那一整句
+                sents[si] = u['sent']
+            ri = u.get('raw_i', -1)
+            if row is not None and 0 <= ri < len(rows):
+                rows[ri] = (u['sent'].start, u['sent'].end, u['sent'].text)
+                if ri + 1 < len(rows):
+                    rows.pop(ri + 1)
+            return
+        if kind == 'merge':
+            if 0 <= si < len(sents):
+                sents[si] = u['sent']
+            sents.insert(min(si + 1, len(sents)), u['sent2'])
+            ri = u.get('raw_i', -1)
+            if row is not None and 0 <= ri < len(rows):
+                rows[ri] = (u['sent'].start, u['sent'].end, u['sent'].text)
+                rows.insert(min(ri + 1, len(rows)),
+                            (u['sent2'].start, u['sent2'].end, u['sent2'].text))
+            return
         if u['deleted']:
             sents.insert(min(si, len(sents)), u['sent'])
             if row is not None:
@@ -1209,7 +1346,8 @@ class Api:
             log.info('撤销 [%d:%d] → %r', u['idx'], u['si'], u['sent'].text[:30])
             self._touch(u['idx'])
             return {'ok': True, 'idx': u['idx'], 'si': u['si'],
-                    'text': u['sent'].text, 'deleted': u['deleted']}
+                    'text': u['sent'].text, 'deleted': u.get('deleted', False),
+                    'kind': u.get('kind') or ''}
         return {'ok': False, 'msg': '没有可撤销的'}
 
     @_logged

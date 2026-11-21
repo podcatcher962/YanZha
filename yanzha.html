@@ -306,13 +306,28 @@
   .sent.cur{background:var(--cur); box-shadow:inset 3px 0 0 var(--run);}
   .sent.hit .x b{background:var(--mark); border-radius:3px; padding:0 1px;
                  color:var(--acc2); font-weight:inherit;}
-  .pen{
-    position:absolute; right:8px; top:7px; font-size:10.5px; color:var(--tx3);
-    border:1px solid var(--line); border-radius:5px; padding:0 6px; cursor:pointer;
-    opacity:0; transition:.12s; background:var(--panel2); line-height:17px;
+  /* 每句右侧的操作条：谁说的 / 改字 / 断句 / 并句。hover 才出来，别挡着读 */
+  /* 落在行的右下角：长句最后一行通常不满，压在右上会挡住正读的字 */
+  .ops{
+    position:absolute; right:8px; bottom:3px;
+    display:flex; align-items:center; gap:2px; opacity:0; transition:.12s;
+    background:var(--panel2); border:1px solid var(--line); border-radius:8px;
+    padding:2px 4px; box-shadow:0 2px 10px var(--sh3);
   }
-  .sent:hover .pen{opacity:1;}
-  .pen:hover{color:var(--acc); border-color:var(--acc);}
+  .sent:hover .ops{opacity:1;}
+  .ops button{
+    border:0; background:transparent; color:var(--tx3); cursor:pointer;
+    font-family:inherit; font-size:10.5px; line-height:17px; padding:0 5px;
+    border-radius:4px; white-space:nowrap;
+  }
+  .ops button:hover{background:var(--acc-bg); color:var(--acc);}
+  .ops .spkbadge{
+    color:var(--acc); font-weight:600; max-width:64px; overflow:hidden;
+    text-overflow:ellipsis; padding-right:7px; margin-right:2px;
+    border-right:1px solid var(--line); border-radius:0;
+  }
+  .ops .spkbadge.none{color:var(--tx3); font-weight:400;}
+  .ops .spkbadge:hover{background:transparent; text-decoration:underline;}
   .editbox{
     flex:1; background:var(--edit-bg); border:1px solid var(--acc); border-radius:7px;
     color:var(--tx); font-family:inherit; font-size:14.5px; line-height:1.9;
@@ -571,7 +586,7 @@
 
 <script>
 let state = [], sel = -1, results = {}, busy = false, t0 = 0;
-const APP_VER = '0.6.2';
+const APP_VER = '0.7.0';
 
 const $ = id => document.getElementById(id);
 
@@ -731,7 +746,14 @@ async function select(i){
       open = !!spk;
       cur = spk;
     }
-    html += `<div class="sent" data-si="${si}"><div class="t" title="点时间码，从这句听原音">${fmtT(s.start)}</div><div class="x">${esc(s.text)}</div><div class="pen" title="改这一句的字（清空=删掉这句）">改</div></div>`;
+    const who = spk ? (/^\d+$/.test(spk) ? '讲' + spk : esc(spk)) : '';
+    html += `<div class="sent" data-si="${si}"><div class="t" title="点时间码，从这句听原音">${fmtT(s.start)}</div><div class="x">${esc(s.text)}</div>`
+      + `<div class="ops">`
+      + `<button class="spkbadge${spk ? '' : ' none'}" data-act="spk" title="这一句是谁说的——点一下只改这一句">${who || '谁'}</button>`
+      + `<button data-act="edit" title="改这一句的字（清空=删掉这句）">改</button>`
+      + `<button data-act="split" title="一句里其实是两个人？在中间切开">断</button>`
+      + `<button data-act="merge" title="和下一句并成一句">并</button>`
+      + `</div></div>`;
   });
   if (open) html += '</div>';
   box.innerHTML = html;
@@ -917,6 +939,135 @@ async function replaceAllHits(){
   $('fstate').textContent = msg;
 }
 
+/* ---- 这一句是谁说的：只改一句，不动整组 ---- */
+function spkLabel(v){ return /^\d+$/.test(v) ? '说话人 ' + v : v; }
+let pickCtx = -1;
+function pickSpk(si){
+  const r = results[sel];
+  const s = r && r.sentences && r.sentences[si];
+  if (!s) return;
+  const cur = s.speaker || '';
+  const all = [...new Set(r.sentences.map(x=>x.speaker).filter(Boolean))];
+  const opts = all.map(v =>
+    `<button class="btn ${v===cur?'btn-main':'btn-ghost'}" data-pick="${esc(v)}"
+       style="flex:0 0 auto;margin:0 8px 8px 0">${esc(spkLabel(v))}</button>`).join('');
+  openModal('这一句是谁说的', `
+    <p>只改这一句，别的句子不动。整组改名还是点稿子左边的「说话人 1」。</p>
+    <p style="margin:14px 0 6px">${opts || '<span class="thin">这份稿子还没有区分说话人</span>'}</p>
+    <p style="margin:14px 0 4px"><input id="spkNew" maxlength="24" placeholder="或者写个新称呼，如「主持人」"
+      style="width:100%;box-sizing:border-box;background:var(--field);border:1px solid var(--field-line);
+             color:var(--tx);padding:9px 11px;border-radius:7px;font-size:13px;outline:none"></p>
+    <p class="thin">留空就不改。名字只存在本次结果里，不动原文件。</p>
+    <p style="text-align:right;margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-main" style="flex:0 0 auto;margin-left:8px;padding:0 18px" onclick="doPickSpk()">确定</button>
+    </p>`);
+  pickCtx = si;
+  setTimeout(()=>{ const i = $('spkNew'); if (i) i.focus(); }, 60);
+}
+$('mbody').addEventListener('click', e=>{
+  const b = e.target.closest('[data-pick]');
+  if (!b || pickCtx < 0) return;
+  const si = pickCtx, v = b.dataset.pick;
+  closeModal();
+  applySpk(si, v);
+});
+async function doPickSpk(){
+  const el = $('spkNew');
+  const v = ((el && el.value) || '').trim();
+  const si = pickCtx;
+  closeModal();
+  if (!v) return;
+  await applySpk(si, v);
+}
+async function applySpk(si, v){
+  const r = await pywebview.api.set_sent_speaker(sel, si, v);
+  if (!r || !r.ok){ $('fstate').textContent = (r && r.msg) || '没改成'; return; }
+  await select(sel);
+  $('fstate').textContent = `第 ${si+1} 句改成了「${spkLabel(v)}」（Ctrl+Z 可退回）`;
+}
+
+/* ---- 断句：一句里其实是两个人，在中间切开 ---- */
+let splitCtx = null;
+function openSplit(si){
+  const r = results[sel];
+  const s = r && r.sentences && r.sentences[si];
+  if (!s) return;
+  const t0 = s.text || '';
+  if (t0.length < 2){ $('fstate').textContent = '这句太短，切不开'; return; }
+  // 默认切点：中点附近最近的分句标点之后，省得每次都手动挪
+  const marks = '，。！？；：、,.!?;:';
+  let pos = Math.floor(t0.length / 2), best = -1, bestD = 1e9;
+  for (let i = 1; i < t0.length; i++){
+    if (marks.indexOf(t0[i]) >= 0){
+      const d = Math.abs(i + 1 - pos);
+      if (d < bestD){ bestD = d; best = i + 1; }
+    }
+  }
+  if (best > 0 && bestD <= 10) pos = best;
+  const all = [...new Set(r.sentences.map(x=>x.speaker).filter(Boolean))];
+  openModal('断句：把这一句拆成两句', `
+    <p class="thin">把光标放到要切开的位置，下面会跟着算时间。切出来的后半句可以顺手指定是谁说的。</p>
+    <textarea id="spTxt" spellcheck="false" style="min-height:120px">${esc(t0)}</textarea>
+    <p id="spPv" class="thin" style="margin-top:10px;line-height:1.7"></p>
+    <p style="margin:12px 0 0">
+      <span class="thin">后半句是谁：</span>
+      <select id="spWho" style="background:var(--field);color:var(--tx);border:1px solid var(--line);
+        border-radius:6px;padding:5px 8px;font-family:inherit;font-size:12px;outline:none">
+        <option value="">跟前面一样</option>
+        ${all.map(v=>`<option value="${esc(v)}">${esc(spkLabel(v))}</option>`).join('')}
+        <option value="__new">另起一个人…</option>
+      </select>
+      <input id="spNew" maxlength="24" placeholder="新称呼" style="display:none;width:120px;margin-left:6px;
+        background:var(--field);color:var(--tx);border:1px solid var(--line);border-radius:6px;
+        padding:5px 8px;font-family:inherit;font-size:12px;outline:none">
+    </p>
+    <p style="text-align:right;margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-main" style="flex:0 0 auto;margin-left:8px;padding:0 18px" onclick="doSplit()">切开</button>
+    </p>`);
+  splitCtx = {si: si, start: s.start, end: s.end};
+  const ta = $('spTxt'), pv = $('spPv'), who = $('spWho'), nw = $('spNew');
+  const upd = ()=>{
+    const p = ta.selectionStart || 0, n = ta.value.length || 1;
+    const mid = splitCtx.start + (splitCtx.end - splitCtx.start) * (p / n);
+    const L = ta.value.slice(0, p).trim(), R = ta.value.slice(p).trim();
+    pv.innerHTML = (p <= 0 || p >= ta.value.length || !L || !R)
+      ? '<span class="warn">光标要停在文字中间，两边都得有字</span>'
+      : `前 <b>${L.length}</b> 字（${fmtT(splitCtx.start)} → ${fmtT(mid)}）　后 <b>${R.length}</b> 字（${fmtT(mid)} → ${fmtT(splitCtx.end)}）`;
+  };
+  ['input','click','keyup','select'].forEach(k=>ta.addEventListener(k, upd));
+  who.addEventListener('change', ()=>{
+    nw.style.display = who.value === '__new' ? 'inline-block' : 'none';
+    if (who.value === '__new') nw.focus();
+  });
+  setTimeout(()=>{ ta.focus(); ta.setSelectionRange(pos, pos); upd(); }, 60);
+}
+async function doSplit(){
+  const ta = $('spTxt'), who = $('spWho'), nw = $('spNew');
+  if (!ta || !splitCtx) return;
+  const pos = ta.selectionStart || 0, txt = ta.value;
+  const L = txt.slice(0, pos).trim(), R = txt.slice(pos).trim();
+  if (!L || !R){ $('fstate').textContent = '光标要停在文字中间，两边都得有字'; return; }
+  let tail = who.value;
+  if (tail === '__new') tail = (nw.value || '').trim();
+  const si = splitCtx.si;
+  closeModal();
+  const r = await pywebview.api.split_sent(sel, si, pos, tail, txt);
+  if (!r || !r.ok){ $('fstate').textContent = (r && r.msg) || '没拆成'; return; }
+  await select(sel);
+  $('fstate').textContent = `第 ${si+1} 句拆成了两句（Ctrl+Z 可退回）`;
+}
+
+/* ---- 并句：识别器把一句话切成了两半 ---- */
+async function doMerge(si){
+  closeModal();
+  const r = await pywebview.api.merge_sent(sel, si);
+  if (!r || !r.ok){ $('fstate').textContent = (r && r.msg) || '并不了'; return; }
+  await select(sel);
+  $('fstate').textContent = r.msg || '已合并成一句';
+}
+
 /* ---- 改字：点句子右边的「改」，就地编辑 ---- */
 function startEdit(el){
   if (!el || el.querySelector('.editbox')) return;
@@ -987,13 +1138,21 @@ document.addEventListener('keydown', e=>{
 });
 
 $('result').addEventListener('click', e=>{
-  const pen = e.target.closest('.pen');
-  if (pen){ startEdit(pen.closest('.sent')); return; }
+  const btn = e.target.closest('.ops button');
+  if (btn){
+    const si = +btn.closest('.sent').dataset.si;
+    const act = btn.dataset.act;
+    if (act === 'edit') startEdit(btn.closest('.sent'));
+    else if (act === 'spk') pickSpk(si);
+    else if (act === 'split') openSplit(si);
+    else if (act === 'merge') doMerge(si);
+    return;
+  }
   const tt = e.target.closest('.sent .t');
   if (tt){ playSent(+tt.closest('.sent').dataset.si); }
 });
 $('result').addEventListener('dblclick', e=>{
-  if (e.target.closest('.editbox') || e.target.closest('.pen')) return;
+  if (e.target.closest('.editbox') || e.target.closest('.ops')) return;
   const s = e.target.closest('.sent');
   if (s) playSent(+s.dataset.si);
 });
@@ -1433,8 +1592,11 @@ const HELP_HTML = `
 <h4>校对：边听边改</h4>
 <ul>
   <li><b>双击任意一句</b>（或点左边的时码），从这句开始播原音，边听边改</li>
-  <li>鼠标移到句子上，右边出现「改」→ 点它就地改字，<b>回车保存 / Esc 取消</b></li>
+  <li>鼠标移到句子上，右下角出现「讲1 改 断 并」→ 点「改」就地改字，<b>回车保存 / Esc 取消</b></li>
   <li>那句是噪声、语气词？<b>把字清空</b>再回车 = 删掉这一句</li>
+  <li>一句里其实是两个人在说？点那句的<b>「断」</b>，光标放到分开的地方 → 切开，后半句还能顺手指定是谁</li>
+  <li>识别器把一句话切碎了？点<b>「并」</b>和下一句接起来</li>
+  <li>整句归错人？点句尾那个<b>说话人小标</b>，只改这一句</li>
   <li>改错了按 <code>Ctrl+Z</code> 撤销，能一路退回去</li>
   <li>顶部搜索框输个错字，<b>回车跳下一处</b>，命中句会标出来</li>
   <li>同一个错字出现很多次：点搜索框右边的<b>「替」</b>，填上正确的词，「全部替换」一次改完；<b>Ctrl+Z 整批退回</b>。替换框留空 = 把这几个字删掉，删空了的句子会整句去掉</li>

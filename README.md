@@ -1,6 +1,6 @@
 # 言札 · YanZha
 
-**v0.6.2** · 2026-11-20
+**v0.7.0** · 2026-11-21
 
 把录音、播客、会议、视频，变成能直接用的文字稿。
 
@@ -39,6 +39,7 @@ Cantonese), speaker diarization, glossary, 8 export formats. Windows x64, MIT.*
 | **语种锁定** | 默认锁中文。中文录音在底噪、笑声、远场混响上容易猜成日文/韩文，锁上以后可疑段用中文重认、残留的假名谚文清掉；录外语就切「自动 · 中英日韩粤」 |
 | **按人数分人** | 知道自己录的是几个人（1~6，1 就是单人）就选上，按人数硬分，比自动判更准；改人数只重跑分人，不重新识别。自动分出 4 人以上时，结果上方会直接问「这段其实几个人」，点一下就重分 |
 | **说话人改名** | 点一下「说话人 1」改成「主持人」「嘉宾」，导出全部格式跟着变 |
+| **断句 / 并句 / 换人** | 一句里其实是两个人在说？点「断」，光标放到分开的地方切开，后半句顺手指定是谁；识别器把一句话切碎了就点「并」接回去；整句归错人，点句尾的小标只改这一句 |
 | **校对改字** | 双击句子听原音，就地改字、删句、撤销，改完直接导出 |
 | **查找替换** | 一个错词满篇都是：「替」→ 填正确的词 →「全部替换」一次改完，`Ctrl+Z` 整批退回；替换框留空即删掉这个词 |
 | **术语表** | 同一个人名、书名、公司名，在同一个人的每一期里都错成同一样子。右上角「术语表」填左右两栏（左＝错的词，右＝改成什么），**不用敲箭头**，转完自动改掉；改错了 `Ctrl+Z` 整批退回。更省事：在稿子上用「替」改对后勾上替换条里的**「记住」**，这条替换自动进表 |
@@ -55,6 +56,43 @@ Cantonese), speaker diarization, glossary, 8 export formats. Windows x64, MIT.*
 | **可中断** | 进度实时、还剩几分钟也一起算给你；随时能停；改「区分说话人」勾选不用重跑识别 |
 
 ---
+
+## v0.7.0 改了什么（实测过的）
+
+来自一位拿言札转访谈的用户：**分人分错了，只能整组改名，改不了单句**。
+更麻烦的是有些句子其实是两个人抢话，识别器把两句话并成了一句 ——
+这一行里既有 A 也有 B，可句尾只挂得下一个说话人，怎么改都是错的。
+
+**① 单句换人** — 鼠标移到任意一句，右下角出现「讲1 改 断 并」。
+点前面那个小标就是「这一句是谁说的」：列出稿子里已有的说话人，点一下就换；
+也可以现写一个新称呼（主持人 / 嘉宾 / 旁白）。**只动这一句**，同一组里别的句子不动。
+整组改名还是点稿子左边的小标题。
+
+**② 断句** — 点「断」，这一句摊在框里，光标放到要分开的地方，
+下面实时显示「前 8 字（00:00 → 00:01）　后 9 字（00:01 → 00:02）」，
+后半句还能顺手指定给另一个人。点「切开」，一行变两行、各归各人。
+
+时间怎么分：句子里没有「每个字的时间」，声纹也只在句级，所以切点按**字数比例**插值。
+字幕会有半秒上下的偏差 —— 比整句归错人强。
+
+**③ 并句** — 识别器把一句话切碎了（「前半句，」「后半句。」），点「并」和下一句接起来。
+两句不同人时按前一句算，状态栏会说明。
+
+**撤销照旧**：换人、断句、并句都进同一个撤销栈，`Ctrl+Z` 一路退回去；
+断句时顺手改的错字算同一步，不用按两次。
+
+**本版实测**：
+
+| 项目 | 结果 |
+|---|---|
+| 逻辑单测 `tools/test_yanzha_v070.py` | **125 项全过**：切点边界、时间插值、撤销、raw 同步、200 句拆 60 次再并回 |
+| 界面冒烟 `_video/test_ui_v070.py`（真实 84 秒双人对话） | **29 项全过**：按钮 → 弹窗 → 后端 → 重绘整条线，截 7 张图 |
+| 旧回归（v0.4 改字 / v0.5 术语与草稿） | **119 项全过**，改字、替换、草稿、导出没受影响 |
+| 拆并往返 | 200 句稿子拆 60 次再并回，字数、说话人、时间三样全对得上 |
+
+**一个必须说清的取舍**：断句会同步改 `raw`（重跑分人用的底稿，不改的话拆出来的行会被吞掉），
+但**手动指定的说话人在重跑分人后会被重算** —— 那是"整批重新聚类"，本来就会推翻上一次的结果。
+真发生了，状态栏会写「手动改的 N 句人已按新结果重算」，不闷着。
 
 ## v0.6.2 改了什么（实测过的）
 
@@ -459,6 +497,36 @@ no GPU required.
 | **Word-level timestamps** | Subtitles precise enough for Premiere / Final Cut / Bilibili |
 | **Resumable** | Live progress with an estimated time remaining, stop anytime; toggling diarization does not re-run recognition |
 
+### v0.7.0 — what changed (measured)
+
+From a user transcribing interviews: **the speaker is wrong and there is no way to fix
+a single line** — renaming only works for a whole speaker. Worse, some lines are two
+people talking at once: the recognizer merged two utterances into one, so the line holds
+both A and B while only one speaker can be attached to it.
+
+**① Reassign one line.** Hover any sentence and a small bar appears at its lower right:
+「讲1 改 断 并」. Click the badge to say *who said this line* — pick an existing speaker
+or type a new label. **Only that line changes**; the rest of the group stays put.
+
+**② Split a line.** Click 「断」, put the caret where the two speakers meet, and the dialog
+previews "first 8 chars (00:00 → 00:01), last 9 chars (00:01 → 00:02)" live. The second
+half can be assigned to another speaker in the same step.
+
+Timing is interpolated **by character count**: there is no per-character timestamp, and
+speaker embedding is sentence-level. Subtitles can be off by half a second — better than
+attributing the whole line to the wrong person.
+
+**③ Merge two lines.** When the recognizer cut one sentence in half, click 「并」 to join
+the next line. If the two belong to different speakers, the first one wins and the status
+bar says so.
+
+Undo is unchanged: reassign, split and merge share the same undo stack, and text edited
+inside the split dialog is reverted in the same step.
+
+**Measured this release:** 125 logic assertions (`tools/test_yanzha_v070.py`), 29 UI
+assertions driven through the real window with an 84-second two-speaker recording, and
+the two older suites (119 assertions) still green.
+
 ### v0.6.2 — what changed (measured)
 
 Same user as above. He wanted "an AI that fixes the typos", but could not say how they
@@ -684,4 +752,4 @@ compliance table and [`licenses/`](licenses/) for the full text.
 **© 永远的兰兰 · Lanlan Eternal**
 
 仓库 / Repository：https://github.com/podcatcher962/YanZha
-版本 / Version：v0.6.2 · 2026-11-20
+版本 / Version：v0.7.0 · 2026-11-21

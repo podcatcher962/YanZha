@@ -294,6 +294,72 @@ class Sentence:
     def __post_init__(self):
         self.text = self.text.strip()
 
+# ---------------------------------------------------------------- 拆句 / 接句
+# 一句里其实是两个人在说话（或识别器把两句话并成了一句）时，用户要能在中间切开。
+# 句子里没有「每个字的时间」，声纹也只在句级，所以切点只能按字数比例估时间：
+# 字幕差半秒能忍，整句归错人是不能忍的。
+SPLIT_MIN = 1          # 切点两侧至少各留几个非空白字符
+
+
+def split_text(text: str, pos: int):
+    """按字符位置把一句的字切成两半；切不开给 None。
+
+    切点压到空白上时，空白归左边，两边都不留纯空白。
+    """
+    t = text or ''
+    if len(t) < 2 * SPLIT_MIN:
+        return None
+    try:
+        pos = int(pos)
+    except Exception:
+        return None
+    if pos <= 0 or pos >= len(t):
+        return None
+    left, right = t[:pos].rstrip(), t[pos:].lstrip()
+    if len(left) < SPLIT_MIN or len(right) < SPLIT_MIN:
+        return None
+    return left, right
+
+
+def split_time(text: str, pos: int, start: float, end: float) -> float:
+    """切点处的时间：按切点前的字数占比插值。"""
+    if end - start < 0.12:                 # 太短，插值没意义，取中点
+        return round((start + end) / 2, 2)
+    frac = pos / max(1, len(text or ''))
+    mid = start + (end - start) * max(0.0, min(1.0, frac))
+    return round(min(max(mid, start + 0.05), end - 0.05), 2)
+
+
+def split_sentence(s: Sentence, pos: int):
+    """把一句拆成 (前, 后)；切不开给 None。两半默认都还是原来那个人。"""
+    pair = split_text(s.text, pos)
+    if not pair:
+        return None
+    left, right = pair
+    mid = split_time(s.text, pos, s.start, s.end)
+    spk = getattr(s, 'speaker', '') or ''
+    return (Sentence(s.start, mid, left, spk), Sentence(mid, s.end, right, spk))
+
+
+def join_text(a: str, b: str) -> str:
+    """接两句的字：中文直接连，英文/数字之间补一个空格。"""
+    a = (a or '').strip()
+    b = (b or '').strip()
+    if not a:
+        return b
+    if not b:
+        return a
+    if a[-1].isascii() and a[-1].isalnum() and b[0].isascii() and b[0].isalnum():
+        return a + ' ' + b
+    return a + b
+
+
+def merge_pair(a: Sentence, b: Sentence) -> Sentence:
+    """两句并一句：字接起来、时间取并集、说话人取前一句（前一句没有就用后一句）。"""
+    spk = (getattr(a, 'speaker', '') or '') or (getattr(b, 'speaker', '') or '')
+    return Sentence(min(a.start, b.start), max(a.end, b.end),
+                    join_text(a.text, b.text), spk)
+
 
 def text_from_tokens(tokens: list[str], times: list[float], seg_ids=None):
     """把识别出的 token 还原成人读的文本，并给出**每个字符**的时间。
