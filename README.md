@@ -85,8 +85,8 @@ Cantonese), speaker diarization, glossary, 8 export formats. Windows x64, MIT.*
 
 | 项目 | 结果 |
 |---|---|
-| 逻辑单测 `tools/test_yanzha_v070.py` | **125 项全过**：切点边界、时间插值、撤销、raw 同步、200 句拆 60 次再并回 |
-| 界面冒烟 `_video/test_ui_v070.py`（真实 84 秒双人对话） | **29 项全过**：按钮 → 弹窗 → 后端 → 重绘整条线，截 7 张图 |
+| 逻辑单测（本机脚本 `tools/test_yanzha_v070.py`，不入仓库） | **125 项全过**：切点边界、时间插值、撤销、raw 同步、200 句拆 60 次再并回 |
+| 界面冒烟（本机脚本 `_video/test_ui_v070.py`，真实 84 秒双人对话） | **29 项全过**：按钮 → 弹窗 → 后端 → 重绘整条线，截 7 张图 |
 | 旧回归（v0.4 改字 / v0.5 术语与草稿） | **119 项全过**，改字、替换、草稿、导出没受影响 |
 | 拆并往返 | 200 句稿子拆 60 次再并回，字数、说话人、时间三样全对得上 |
 
@@ -523,9 +523,9 @@ bar says so.
 Undo is unchanged: reassign, split and merge share the same undo stack, and text edited
 inside the split dialog is reverted in the same step.
 
-**Measured this release:** 125 logic assertions (`tools/test_yanzha_v070.py`), 29 UI
-assertions driven through the real window with an 84-second two-speaker recording, and
-the two older suites (119 assertions) still green.
+**Measured this release:** 125 logic assertions (local script `tools/test_yanzha_v070.py`,
+not shipped in the repo), 29 UI assertions driven through the real window with an
+84-second two-speaker recording, and the two older suites (119 assertions) still green.
 
 ### v0.6.2 — what changed (measured)
 
