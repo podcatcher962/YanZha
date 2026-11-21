@@ -142,6 +142,19 @@
   }
   .item:hover .del{opacity:1;}
   .del:hover{background:var(--del-bg); color:var(--err);}
+  /* 文件行里的「字幕」小键：只有还没转写的文件才出现。
+     点了先去问后端有没有文本字幕轨，有就直接导成文字稿，不跑识别。 */
+  .ccb{
+    color:var(--acc); border:1px solid var(--acc); border-radius:4px;
+    padding:0 5px; font-size:10.5px; line-height:15px; cursor:pointer;
+    white-space:nowrap;
+  }
+  .ccb:hover{background:var(--acc-bg);}
+  #rtitle.fromsubs::after{
+    content:'字幕轨'; margin-left:8px; font-size:10.5px; padding:1px 6px;
+    border-radius:4px; background:var(--acc-bg); color:var(--acc);
+    vertical-align:middle; font-weight:400;
+  }
   .left-bottom{padding:12px 16px; border-top:1px solid var(--line);}
   .chk{
     display:flex; align-items:center; gap:8px; margin-bottom:10px;
@@ -589,7 +602,7 @@
 
 <script>
 let state = [], sel = -1, results = {}, busy = false, t0 = 0;
-const APP_VER = '0.7.1';
+const APP_VER = '0.7.2';
 
 const $ = id => document.getElementById(id);
 
@@ -628,7 +641,8 @@ function renderList(st){
     if (it.status==='error') meta.push(`<span class="err">${it.error||'失败'}</span>`);
     if (it.status==='wait') meta.push('待转写');
     d.innerHTML = `<div class="nm" title="${esc(it.name)}">${esc(it.name)}</div>
-      <div class="meta">${meta.join('<span style="color:var(--line2)">·</span>')}</div>
+      <div class="meta">${meta.join('<span style="color:var(--line2)">·</span>')}${(it.status==='wait'||it.status==='done')
+        ? '<span class="ccb" onclick="event.stopPropagation();importSubs(' + it.idx + ')" title="这个视频里如果有字幕，不用识别，直接导成文字稿；已经转过的会整份替换">字幕</span>' : ''}</div>
       <div class="bar"><i style="width:${it.status==='done'?100:pct}%"></i></div>
       <div class="del" onclick="event.stopPropagation();del(${it.idx})">×</div>`;
     box.appendChild(d);
@@ -681,6 +695,62 @@ async function pick(){
   await pywebview.api.pick_files();
 }
 function del(i){ pywebview.api.remove(i); }
+
+/* 字幕轨导入：字幕里本来就是文字，不用识别，导进来比识别准得多。
+   字幕和识别结果讲的是同一段话，所以只留一份 —— 导入是「整份替换」，
+   不是追加，不会出现两份并排。已经转好/改过的会先问一句再换。 */
+async function importSubs(idx){
+  const r = await pywebview.api.probe_subs(idx);
+  const ts = (r && r.tracks) || [];
+  const texts = ts.filter(t=>t.text_ok);
+  if (!texts.length){
+    const img = ts.find(t=>t.image_only);
+    $('fstate').textContent = img
+      ? '这个文件的字幕是图片型的（蓝光 PGS / DVD），里面不是文字，只能靠识别'
+      : '这个文件里没有字幕轨';
+    return;
+  }
+  const it = state.find(x=>x.idx===idx) || {};
+  const has = it.status === 'done';
+  if (texts.length === 1 && !has) return doImportSubs(idx, 0);
+  askSubs(idx, texts, has);
+}
+
+/* 多条字幕轨时让用户挑：中文片挂英文字幕很常见，默认第 1 条不一定对。
+   已经有一份稿子时也走这里，先把「会整份替换」说清楚。 */
+function askSubs(idx, texts, has){
+  const rows = texts.map((t,i)=>`<label style="display:block;margin:7px 0;cursor:pointer">
+      <input type="radio" name="subpick" value="${i}" ${i===0?'checked':''}>
+      <b>${esc(t.label)}</b> <span class="thin">${esc(t.codec)}</span></label>`).join('');
+  const warn = has
+    ? '<p class="thin" style="margin-top:12px">这个文件已经有一份稿子了。导入会<b>整份替换</b>，'
+      + '手改过的字、换过的人都不会保留（字幕和识别讲的是同一段话，所以不叠两份）。</p>'
+    : '';
+  openModal(has ? '用字幕轨替换这份稿子？' : '这个文件里有多条字幕', `
+    <p>${has ? '' : `找到 ${texts.length} 条文本字幕，用哪一条？`}</p>
+    ${rows}${warn}
+    <p style="text-align:right;margin-top:18px">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-main" style="flex:0 0 auto;margin-left:8px;padding:0 16px"
+              onclick="doSubs(${idx})">${has ? '替换' : '导入'}</button>
+    </p>`);
+}
+
+async function doSubs(idx){
+  const el = document.querySelector('input[name=subpick]:checked');
+  const si = el ? parseInt(el.value, 10) : 0;
+  closeModal();
+  await doImportSubs(idx, si);
+}
+
+async function doImportSubs(idx, si){
+  const res = await pywebview.api.import_subs(idx, si);
+  if (!res || !res.ok){
+    $('fstate').textContent = (res && res.msg) || '字幕导入失败';
+    return;
+  }
+  $('fstate').textContent = `已从字幕导入 ${res.n} 句 · ${res.chars} 字（${res.label}）`;
+}
 async function setSpk(on){
   const r = await pywebview.api.set_speaker(on);
   if (!r.on && on) { $('spk').checked = false; }
@@ -735,6 +805,9 @@ async function select(i){
   $('rtitle').textContent = r.name
     ? `${r.name} · ${r.sentences.length} 句` + (r.speakers > 1 ? ` · ${r.speakers} 人` : '')
     : '转写结果';
+  // 字幕导进来的稿子标一下来源：用户得知道「这一份不是听出来的」，
+  // 后面看到奇怪的分句才不会以为是识别出错。
+  $('rtitle').classList.toggle('fromsubs', r.source === 'subs');
   const box = $('result');
   if (!r.sentences || !r.sentences.length){
     box.innerHTML = `<div class="placeholder">这个文件还没有内容</div>`;
@@ -1661,6 +1734,18 @@ const HELP_HTML = `
   <li>点「开始转写」，等进度走完</li>
   <li>右侧看稿，点「导出」选格式</li>
 </ul>
+
+<h4>视频里本来就有字幕？不用识别</h4>
+<p>有些视频（网课、录屏、压好的影视）里带一条<b>独立的字幕流</b>，就是播放器里能开关的那种。
+里面的文字是现成的 —— 直接把字幕导出来，比识别准，<b>一个字都不会错</b>，也不用等。</p>
+<ul>
+  <li>文件加进列表后，<b>还没转写</b>的那一行会多出一个<b>「字幕」</b>小键，点一下就开始导</li>
+  <li>导进来和识别出来的稿子一样用：能改字、能换人、能断句并句、能撤销，导出前同样会问要不要用原始稿</li>
+  <li>结果页标题后面会标一个<b>「字幕轨」</b>，提醒你这份不是听出来的</li>
+  <li>说话人一栏是空的 —— 字幕本身不标谁在说话，需要的话自己点「讲1」补</li>
+  <li><b>蓝光电影要注意</b>：那种字幕（PGS / DVD）存的是图片不是文字，点了会提示「图片字幕」，只能靠识别</li>
+</ul>
+
 <h4>改 · 断 · 并：先认情况，再动手</h4>
 <p>鼠标移到任意一句上，那句话的<b>右下角</b>会浮出四个小键：<b>讲1　改　断　并</b>。
 鼠标移开就收起来，不挡着读稿。点错了也不要紧，右上角都能退回来。</p>

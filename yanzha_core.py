@@ -1433,3 +1433,161 @@ def to_tsv(sentences: list[Sentence]) -> str:
         out.append('%s\t%s\t%s' % (head, _spk_label(spk), s.text)
                    if spk else '%s\t%s' % (head, s.text))
     return '\n'.join(out) + '\n'
+# ---------------------------------------------------------------- 字幕轨
+# 视频里常常带一条独立的字幕流（播放器里能开关的那种）。那种字幕的文字是
+# 现成的，根本不用识别 —— 直接导出来比任何 ASR 都准，一个字都不会错。
+#
+# 但「字幕流」分两种，必须分清，否则会让人白等：
+#   文本型  subrip / ass / ssa / webvtt / mov_text …  里面就是字符，导出即成稿
+#   图形型  hdmv_pgs_subtitle（蓝光）/ dvd_subtitle（DVD）/ dvb_subtitle
+#           里面是图片，取出来还得 OCR，这里不处理，但界面上要如实说明
+# 所以下面只认文本型，图形型单独标出来。
+SUB_TEXT_CODECS = {
+    'subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text',
+    'subviewer', 'subviewer1', 'microdvd', 'sami', 'realtext',
+    'jacosub', 'mpl2', 'pjs', 'vplayer', 'lrc', 'stl', 'sub',
+}
+SUB_IMAGE_CODECS = {'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle',
+                    'xsub', 'dvb_teletext'}
+
+# ffmpeg -i 的输出形如：
+#   Stream #0:2(chi): Subtitle: subrip (srt)
+#   Stream #0:3(eng): Subtitle: hdmv_pgs_subtitle ([13][0][0][0] / 0x000D)
+_SUB_STREAM = re.compile(
+    r'Stream #\d+:(\d+)(?:\[[^\]]*\])?(?:\(([^)]*)\))?: Subtitle:\s*'
+    r'([A-Za-z0-9_]+)')
+
+_LANG_CN = {'chi': '中文', 'zho': '中文', 'zh': '中文', 'eng': '英语',
+            'en': '英语', 'jpn': '日语', 'ja': '日语', 'kor': '韩语',
+            'ko': '韩语', 'yue': '粤语', 'und': '未标注'}
+
+
+@dataclass
+class SubTrack:
+    """一条字幕流。index 是绝对流号，导出时直接 -map 0:<index>。"""
+    index: int
+    lang: str = ''
+    codec: str = ''
+
+    @property
+    def text_ok(self) -> bool:
+        return self.codec in SUB_TEXT_CODECS
+
+    @property
+    def image_only(self) -> bool:
+        return self.codec in SUB_IMAGE_CODECS
+
+    def label(self) -> str:
+        lg = _LANG_CN.get((self.lang or '').lower(), self.lang or '未标注')
+        if self.text_ok:
+            return lg
+        if self.image_only:
+            return lg + '（图片字幕）'
+        return '%s（%s）' % (lg, self.codec or '未知')
+
+
+def probe_subs(path: str):
+    """列出文件里的字幕轨。判断不了就返回空表，绝不抛异常。"""
+    cmd = [ffmpeg_path(), '-nostdin', '-hide_banner', '-i', path]
+    try:
+        r = _run(cmd, 60)
+    except Exception:
+        return []
+    raw = (r.stderr or b'').decode('utf-8', 'ignore')
+    out = []
+    for m in _SUB_STREAM.finditer(raw):
+        out.append(SubTrack(int(m.group(1)), (m.group(2) or '').strip(),
+                            m.group(3).strip().lower()))
+    return out
+
+
+def has_text_subs(tracks) -> bool:
+    return any(t.text_ok for t in tracks)
+
+
+# ---- SRT 解析
+_SRT_TIME = re.compile(
+    r'(\d{1,3}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*'
+    r'(\d{1,3}):(\d{2}):(\d{2})[,.](\d{1,3})')
+_TAG = re.compile(r'<[^>]{0,40}>|\{\\[^}]{0,80}\}')
+
+
+def _hms(h, m, s, ms) -> float:
+    return int(h) * 3600 + int(m) * 60 + int(s) + int((ms + '00')[:3]) / 1000.0
+
+
+def _clean_line(s: str) -> str:
+    """去掉 <i>、{\\an8} 这类标记；字幕里的换行本身不是句子边界。"""
+    s = _TAG.sub('', s)
+    return s.strip()
+
+
+def _join_lines(lines) -> str:
+    """多行字幕接成一句：中文直接连，英文两侧留一个空格。"""
+    out = ''
+    for ln in lines:
+        if not out:
+            out = ln
+            continue
+        if (out[-1:].isascii() and out[-1:].isalnum()
+                and ln[0].isascii() and ln[0].isalnum()):
+            out += ' ' + ln
+        else:
+            out += ln
+    return out
+
+
+def parse_srt(text: str):
+    """SRT 文本 → Sentence 列表。解析不了的行跳过，不抛异常。"""
+    if not text:
+        return []
+    text = text.replace('\r\n', '\n').replace('\r', '\n').lstrip('\ufeff')
+    out = []
+    prev_end = 0.0
+    for block in re.split(r'\n{2,}', text):
+        lines = block.split('\n')
+        ti = next((i for i, l in enumerate(lines) if '-->' in l), None)
+        if ti is None:
+            continue
+        m = _SRT_TIME.search(lines[ti])
+        if not m:
+            continue
+        st = _hms(*m.group(1, 2, 3, 4))
+        en = _hms(*m.group(5, 6, 7, 8))
+        body = [_clean_line(l) for l in lines[ti + 1:]]
+        body = [l for l in body if l]
+        if not body:
+            continue
+        txt = _join_lines(body)
+        if not txt:
+            continue
+        if en < st:
+            en = st
+        # 字幕常见首尾相接甚至轻微重叠，保持原样比强行对齐安全；但整块落在
+        # 上一句之前很多的（时间轴乱序）就丢掉，免得整稿顺序错乱。
+        if en < prev_end - 3.0:
+            continue
+        out.append(Sentence(round(st, 3), round(max(en, st + 0.3), 3), txt))
+        prev_end = max(prev_end, en)
+    return out
+
+
+def export_subs_text(path: str, index: int) -> str:
+    """把第 index 条字幕流导成 SRT 文本。转不了抛 DecodeError。"""
+    cmd = [ffmpeg_path(), '-nostdin', '-v', 'error', '-i', path,
+           '-map', '0:%d' % index, '-c:s', 'srt', '-f', 'srt', '-']
+    try:
+        r = _run(cmd, 900)
+    except subprocess.TimeoutExpired:
+        raise DecodeError('字幕导出超时')
+    if r.returncode != 0 or not r.stdout:
+        msg = (r.stderr or b'').decode('utf-8', 'ignore').strip().splitlines()
+        raise DecodeError('这条字幕导不出来：%s'
+                          % (msg[-1] if msg else '未知错误'))
+    return r.stdout.decode('utf-8', 'replace')
+
+
+def subs_to_sentences(path: str, index: int):
+    """字幕流 → (句子表, 字符数)。空字幕返回 ([], 0)。"""
+    sents = parse_srt(export_subs_text(path, index))
+    return sents, sum(len(s.text) for s in sents)

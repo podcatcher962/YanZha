@@ -1,6 +1,6 @@
 # 言札 · YanZha
 
-**v0.7.1** · 2026-11-21
+**v0.7.2** · 2026-11-21
 
 把录音、播客、会议、视频，变成能直接用的文字稿。
 
@@ -50,10 +50,46 @@ Cantonese), speaker diarization, glossary, 8 export formats. Windows x64, MIT.*
 | **拿出去改再粘回来** | 「导出 → 校对稿」存一份一行一句、行首带编号的 txt，拿给任何工具改；改完「导出 → 粘贴改好的稿子」把整篇贴回来，按编号逐句落回，时间戳和说话人都保留。删了编号的行跳过，其余照常回填；程序全程不联网，稿子出不出这台电脑由你决定 |
 | **批量导出** | 一次转了十个文件，选一个文件夹按同一种格式全部导出；撞名不覆盖，自动加 `-2` |
 | **音视频通吃** | 音频 mp3 m4a wav flac aac ogg opus wma；视频 mp4 mkv mov avi flv webm ts m4v |
+| **视频自带字幕** | 视频里带文本字幕流（播放器能开关的那种）的，不用识别，点「字幕」直接把字幕导成文字稿，一个字不差；蓝光 PGS / DVD 那种图片字幕会明说「得靠识别」 |
 | **自动标点断句** | 模型自带标点，按句整理成段，不是一坨没有标点的流水 |
 | **逐字时间戳** | 字幕能精确到每一句的起止，导入剪映、Premiere、B 站 |
 | **字幕自动折行** | srt / vtt 里一句太长会断成两行，剪映里不溢屏 |
 | **可中断** | 进度实时、还剩几分钟也一起算给你；随时能停；改「区分说话人」勾选不用重跑识别 |
+
+---
+
+## v0.7.2 改了什么（实测过的）
+
+一条用户反馈：**「对视频画面中的文字有什么办法，提取文字稿」**。
+
+先说清边界：烧进画面的字（硬字幕、录屏、PPT）得逐帧识别，那是另一件事，这一版没做。
+但很多视频里本来就带一条**独立的文本字幕流**（播放器里能开关的那种），文字是现成的，
+根本不用识别 —— 这一版就是把这条路打通。
+
+**① 有字幕的视频，直接导成文字稿** — 文件加进列表后，还没转写的那一行会多出一个
+**「字幕」**小键，点一下就把字幕流导出来，不跑识别、不用等，**一个字都不会错**。
+文本字幕（SRT / ASS / SSA / WebVTT / MP4 内嵌 mov_text）都认。
+
+**② 导进来和识别出来的稿子一样用** — 同一套改字、换人、断句并句、撤销、导出前确认，
+八种导出格式全都能用。时间轴来自字幕本身，比按字数比例估的更准。
+结果页标题后面会标一个「字幕轨」，一眼能看出这份不是听出来的。
+
+**③ 图片字幕如实说** — 蓝光 PGS、DVD VobSub 里的字幕存的是图片不是字，
+点了不会假装成功，直接告诉你「有字幕，但是图片型的，还是得靠识别」。
+
+**本版实测**：
+
+| 项目 | 结果 |
+|---|---|
+| 字幕解析单测（`_tmp/test_subs_core.py`，不入仓库） | **46 项全过**：SRT 多行合并、HTML/位置标记清除、点号时间轴、倒序纠正、乱序丢弃、BOM/CRLF、三类容器真导出、图片字幕判定 |
+| 字幕导入 Api 测试（`_tmp/test_subs_api.py`） | **47 项全过**：导入后改字/撤销/断句/并句/换人全部可用，导出 txt 与 srt 内容正确且无标记残留，草稿带来源、恢复后仍是字幕来源，无字幕文件被明确拒绝 |
+| 字幕界面冒烟（`_video/test_ui_subs.py`，真窗口） | **11 项全过**：按钮只出现在待转写行、点了出 4 句、标题带「字幕轨」、状态栏文案、无字幕时提示、导入后仍能断句且撤销键变亮 |
+| 旧逻辑回归 | **295 项全过**（125 + 72 + 47 + 51），改字 / 替换 / 术语 / 草稿 / 断并 / 导出都没受影响 |
+| 旧界面回归 | **51 项全过**（29 + 22），撤销按钮、导出确认、断句并句弹窗照旧 |
+
+**没做的那部分**：硬字幕 OCR。它要额外装几十 MB 的识别模型、每帧都要跑一遍，
+一小时视频要很久；中文字幕带描边、半透明、背景花纹，错字率明显高于语音识别。
+需求记着，提的人多了再做。
 
 ---
 
@@ -529,9 +565,39 @@ no GPU required.
 | **8 export formats** | txt / md / Word / srt / vtt / timestamped txt / structured json / proof copy |
 | **Batch export** | Ten finished files, pick one folder, export them all in one format; existing names are never overwritten (`-2` is appended) |
 | **Audio + video input** | mp3 m4a wav flac aac ogg opus wma; mp4 mkv mov avi flv webm ts m4v |
+| **Videos that carry subtitles** | If the file has a text subtitle stream (the kind a player can toggle), skip recognition entirely: click **Subs** and the subtitles become the transcript, not a character wrong. Blu-ray PGS / DVD bitmap subs are reported honestly as "needs recognition" |
 | **Punctuation & paragraphs** | Built into the model — real sentences, not one unreadable wall of text |
 | **Word-level timestamps** | Subtitles precise enough for Premiere / Final Cut / Bilibili |
 | **Resumable** | Live progress with an estimated time remaining, stop anytime; toggling diarization does not re-run recognition |
+
+### v0.7.2 — what changed (measured)
+
+One request from a user: **"is there any way to get the text out of a video?"**
+
+Let us be precise about the boundary: text burned into the picture (hard subs, screen
+recordings, slides) still needs frame-by-frame OCR, and that is not in this release.
+But plenty of videos already carry a **separate text subtitle stream** — the kind a
+player can toggle on and off. Those words exist; this release simply exposes them.
+
+**① Videos that already have subtitles.** A **Subs** chip appears on any row that has not
+been transcribed yet. One click exports the subtitle stream as a transcript: no recognition,
+no waiting, **not a single character wrong**. SRT / ASS / SSA / WebVTT / MP4 mov_text.
+
+**② It behaves exactly like a recognised transcript.** Edit text, reassign speakers, split,
+merge, undo, the pre-export check, all eight export formats. Timings come from the subtitles
+themselves, which beats estimating by character count. The result header is tagged
+**"字幕轨"** so it is obvious the text was not heard.
+
+**③ Bitmap subtitles are reported honestly.** Blu-ray PGS and DVD VobSub store pictures,
+not characters. The app says so instead of pretending to succeed.
+
+**Measured in this release**: 46 subtitle-parsing tests, 47 API tests, 11 UI checks,
+plus 346 regression tests (295 logic + 51 UI) all passing.
+
+**Not done**: OCR for burned-in subtitles. It adds tens of megabytes of models and runs a
+pass over every frame; an hour of video takes a long time, and Chinese subtitles with
+outlines and semi-transparent backgrounds produce noticeably more errors than speech
+recognition does. Filed for later.
 
 ### v0.7.1 — what changed (measured)
 
@@ -826,4 +892,4 @@ compliance table and [`licenses/`](licenses/) for the full text.
 **© 永远的兰兰 · Lanlan Eternal**
 
 仓库 / Repository：https://github.com/podcatcher962/YanZha
-版本 / Version：v0.7.1 · 2026-11-21
+版本 / Version：v0.7.2 · 2026-11-21

@@ -50,7 +50,7 @@ def _init_log():
 
 
 APP_TITLE = '言札'
-VERSION = '0.7.1'
+VERSION = '0.7.2'
 
 
 _init_log()
@@ -432,6 +432,8 @@ class Api:
                 'raw': [],            # 不带说话人的句子，改勾选时复用
                 'sig': None,          # 上次转写用的参数组合（分人/语种/人数）
                 'lang': '',           # 上次锁的语种：语种变了只能重新识别
+                'source': '',         # 'asr' 识别 / 'subs' 字幕导入
+                'subs': None,         # 探测到的字幕轨缓存（只在被问到时填）
             })
             added.append(p)
         self._sync()
@@ -551,6 +553,7 @@ class Api:
                                       for s in res['sentences']]
                     it['sig'] = self._sig()
                     it['lang'] = self._engine.lang_pref
+                    it['source'] = 'asr'
                 if res.get('canceled'):
                     it['status'] = 'wait'
                     it['msg'] = '已停止'
@@ -617,6 +620,94 @@ class Api:
         self._engine.cancel_event.set()
         return {'ok': True}
 
+    # ---------------- 字幕轨（不走识别）
+    def probe_subs(self, idx):
+        """这个文件里有没有现成的字幕轨。
+
+        只探测、不改任何状态 —— 界面上用户点了「字幕」才调进来。
+        """
+        if not (0 <= idx < len(self._items)):
+            return {'tracks': []}
+        it = self._items[idx]
+        try:
+            tr = C.probe_subs(it['path'])
+        except Exception:
+            log.exception('探测字幕失败 %s', it['path'])
+            tr = []
+        return {'tracks': [{'index': t.index, 'lang': t.lang,
+                            'codec': t.codec, 'label': t.label(),
+                            'text_ok': t.text_ok,
+                            'image_only': t.image_only} for t in tr]}
+
+    @_logged
+    def import_subs(self, idx, si=0):
+        """把字幕轨直接当成转写结果导进来 —— 不跑识别，一个字都不会错。
+
+        导进来的稿子和识别出来的走同一套：能改字、能换人、能断句并句、
+        能撤销，导出前同样会问「要不要用原始稿」。区别只有两处：
+          · 没有说话人（字幕本身就不标）
+          · 时间轴是字幕原有的，不是按字数比例估的
+        """
+        if self._running:
+            return {'ok': False, 'msg': '正在转写，等它跑完再导入字幕'}
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有这个文件'}
+        it = self._items[idx]
+        try:
+            tracks = C.probe_subs(it['path'])
+        except Exception as e:
+            log.exception('探测字幕失败')
+            return {'ok': False, 'msg': '读不出这个文件的字幕信息：%s' % e}
+        texts = [t for t in tracks if t.text_ok]
+        if not texts:
+            if any(t.image_only for t in tracks):
+                return {'ok': False,
+                        'msg': '这个文件有字幕，但是图片型的（蓝光 PGS / DVD），'
+                               '里面不是文字，还是得靠识别'}
+            return {'ok': False, 'msg': '这个文件里没有字幕轨'}
+        if not (0 <= si < len(texts)):
+            si = 0
+        tr = texts[si]
+        try:
+            sents, chars = C.subs_to_sentences(it['path'], tr.index)
+        except C.DecodeError as e:
+            return {'ok': False, 'msg': str(e)}
+        except Exception as e:
+            log.exception('导出字幕失败')
+            return {'ok': False, 'msg': '字幕导不出来：%s' % e}
+        if not sents:
+            return {'ok': False, 'msg': '这条字幕轨是空的'}
+        dur = 0.0
+        try:
+            dur = C.duration_of(it['path'])
+        except Exception:
+            pass
+        # 整份换掉之后，这份稿子之前的撤销记录全部失效。留着更糟 ——
+        # 点一下「撤销」会把上一份稿子的某一句撤回来，两份内容混在一起。
+        self._undo = [e for e in self._undo if e.get('idx') != idx]
+        it['sentences'] = sents
+        it['duration'] = max(dur, sents[-1].end)
+        it['raw'] = [(s.start, s.end, s.text) for s in sents]
+        it['pristine'] = [[s.start, s.end, s.text, s.speaker] for s in sents]
+        it['status'] = 'done'
+        it['progress'] = 1.0
+        it['error'] = ''
+        it['source'] = 'subs'
+        # sig 故意不写 _sig()：用户点「开始转写」时应当真的重跑识别，
+        # 而不是因为「参数没变」被当成已转好而跳过。
+        it['sig'] = 'subs'
+        it['lang'] = 'subs'
+        it['msg'] = '%d 句 · %d 字 · 来自字幕轨（%s）' % (
+            len(sents), chars, tr.label())
+        it.pop('hints', None)
+        log.info('导入字幕 %s：%d 句 %d 字 codec=%s',
+                 it['name'], len(sents), chars, tr.codec)
+        self._draft_save(idx)
+        self._sync()
+        self._push('showResult', idx)
+        return {'ok': True, 'n': len(sents), 'chars': chars,
+                'idx': idx, 'label': tr.label()}
+
     # ---------------- 结果
     def result(self, idx):
         if not (0 <= idx < len(self._items)):
@@ -630,7 +721,9 @@ class Api:
                 # 界面上「撤销」按钮的可用状态：0 就置灰，别让人点了没反应
                 'undo_left': self._undo_left(idx),
                 # 导出前那句确认：和刚转写出来比，到底改了没有
-                'changed': self._changed_info(it)}
+                'changed': self._changed_info(it),
+                # 'subs' 表示这份稿子是字幕轨导进来的，不是识别出来的
+                'source': it.get('source') or ''}
 
     @_logged
     def rename_speaker(self, idx, old, new):
@@ -1224,6 +1317,7 @@ class Api:
             'v': 1, 'key': key, 'path': it['path'], 'name': it['name'],
             'duration': it['duration'], 'saved_at': time.time(),
             'exported': bool(exported),
+            'source': it.get('source') or '',
             'sentences': [[s.start, s.end, s.text, s.speaker]
                           for s in it['sentences']],
             # 原始稿一起存：下次打开点导出，仍然能选「用原始稿导出」
@@ -1320,6 +1414,8 @@ class Api:
             'raw': [(s.start, s.end, s.text) for s in sents],
             'pristine': pris,
             'last_spk': None,
+            'source': d.get('source') or '',
+            'subs': None,
         })
         log.info('恢复草稿 %s：%d 句', name, len(sents))
         self._sync()
