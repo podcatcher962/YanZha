@@ -288,8 +288,9 @@
     opacity:0; transition:.12s;
   }
   .spkname:hover .ren{opacity:1;}
-  .sent{display:flex; gap:14px; padding:7px 10px; border-radius:7px; transition:.12s;
-        position:relative;}
+  /* 右侧留 118px 给「讲1 改 断 并」：不留的话，一行写满的长句末尾几个字会被压住 */
+  .sent{display:flex; gap:14px; padding:7px 118px 7px 10px; border-radius:7px;
+        transition:.12s; position:relative;}
   .sent:hover{background:var(--panel);}
   .sent .t{
     font-size:11px; color:var(--tx3); font-family:"Cascadia Mono",Consolas,monospace;
@@ -536,6 +537,8 @@
         </div>
       </div>
       <div class="ract">
+        <button class="btn btn-ghost" onclick="undoText()" id="btnUndo" disabled
+                title="还没有可撤销的改动">↺ 撤销</button>
         <button class="btn btn-ghost" onclick="copyAll()" id="btnCopy" disabled>复制</button>
         <div class="drop">
           <button class="btn btn-ghost" onclick="toggleDD(event)" id="btnExp" disabled>导出 ▾</button>
@@ -586,7 +589,7 @@
 
 <script>
 let state = [], sel = -1, results = {}, busy = false, t0 = 0;
-const APP_VER = '0.7.0';
+const APP_VER = '0.7.1';
 
 const $ = id => document.getElementById(id);
 
@@ -728,6 +731,7 @@ async function select(i){
   tipped();
   const r = await pywebview.api.result(i);
   results[i] = r;
+  syncUndo(r.undo_left);
   $('rtitle').textContent = r.name
     ? `${r.name} · ${r.sentences.length} 句` + (r.speakers > 1 ? ` · ${r.speakers} 人` : '')
     : '转写结果';
@@ -735,6 +739,7 @@ async function select(i){
   if (!r.sentences || !r.sentences.length){
     box.innerHTML = `<div class="placeholder">这个文件还没有内容</div>`;
     $('btnExp').disabled = true; $('btnCopy').disabled = true;
+    syncUndo(0);
     return;
   }
   let html = '', cur = undefined, open = false;
@@ -1115,6 +1120,15 @@ function startEdit(el){
   ta.addEventListener('blur', ()=>finish(true));
 }
 
+function syncUndo(left){
+  const b = $('btnUndo');
+  if (!b) return;
+  const n = Math.max(0, left | 0);
+  b.disabled = n <= 0;
+  b.title = n > 0
+    ? `撤销上一次改动（还能退 ${n} 步，Ctrl+Z 一样）`
+    : '还没有可撤销的改动';
+}
 async function undoText(){
   if (sel < 0) return;
   const r = await pywebview.api.undo_text(sel);
@@ -1122,7 +1136,8 @@ async function undoText(){
     await select(sel);                     // 先重绘，再写状态栏
     $('fstate').textContent = r.batch
       ? `已撤销这次替换（${r.n} 句回到原样）`
-      : '已撤销上一次修改';
+      : `已撤销：${r.what || '上一次改动'}` +
+        (r.left > 0 ? `　还能再退 ${r.left} 步` : '　已经退到最初的稿子');
   } else {
     $('fstate').textContent = (r && r.msg) || '没有可撤销的';
   }
@@ -1172,7 +1187,21 @@ function tipped(){
   const it = state.find(x => x.idx === sel);
   const hs = (it && it.hints) || [];
   const h = hs.find(x => !(it._tipOff && it._tipOff[x.kind]));
-  if (!h){ box.hidden = true; box.innerHTML = ''; return; }
+  if (!h){
+    // 没有别的提示可给时，第一次看成稿给一条「按钮在哪」的引导。
+    // 鼠标移上去才出现的东西，不说一句基本没人会发现。
+    let seen = '';
+    try { seen = localStorage.getItem('yz.tipOps') || ''; } catch (e) {}
+    if (!seen && it && it.status === 'done'){
+      box.hidden = false;
+      box.innerHTML = `<span>想改稿？鼠标移到任意一句上，右下角浮出
+        <b>讲1　改　断　并</b> —— 改字 / 换人 / 断句 / 并句都在这里。</span>
+        <button class="go" onclick="help()">看怎么改</button>
+        <button class="x" title="知道了，以后不再提示" onclick="tipOff('ops', 1)">×</button>`;
+      return;
+    }
+    box.hidden = true; box.innerHTML = ''; return;
+  }
   box.hidden = false;
   if (h.kind === 'spk'){
     box.innerHTML = `<span>自动分出 <b>${h.n}</b> 个人？这段其实几个人 ——
@@ -1196,7 +1225,10 @@ async function spkAgain(n){
 async function tipOff(kind, forever){
   const it = state.find(x => x.idx === sel);
   if (it){ it._tipOff = it._tipOff || {}; it._tipOff[kind] = 1; }
-  if (forever){ try { await pywebview.api.tip_off(kind); } catch (e) {} }
+  if (forever){
+    try { await pywebview.api.tip_off(kind); } catch (e) {}
+    if (kind === 'ops'){ try { localStorage.setItem('yz.tipOps', '1'); } catch (e) {} }
+  }
   tipped();
 }
 /* ---------- 拿出去改、改完粘回来 ---------- */
@@ -1235,6 +1267,14 @@ async function doExport(k){
   $('dd').classList.remove('on');
   if (sel < 0) return;
   try { localStorage.setItem('yz.lastKind', k); } catch (e) {}
+  // 重新取一次：改名这类改动不一定重绘过列表，别拿旧数据问人
+  try { results[sel] = await pywebview.api.result(sel); } catch (e) {}
+  const ch = (results[sel] || {}).changed;
+  if (ch && ch.changed){ showChanged(ch, k); return; }
+  await afterExportGate(k);
+}
+/* 改动的确认放在「扫可疑内容」之前：先确认这些改动算不算数，再谈导出 */
+async function afterExportGate(k){
   let a = null;
   if (k !== 'proof'){          // 校对稿是拿去外面改的，不用先扫一遍
     try { a = await pywebview.api.audit(sel); }
@@ -1242,6 +1282,38 @@ async function doExport(k){
   }
   if (a && a.ok && a.total > 0){ showAudit(a, k); return; }
   await exportNow(k, a);
+}
+function changedText(ch){
+  if (!ch) return '';
+  if (ch.structural)
+    return `句数从 ${ch.before} 句变成了 ${ch.after} 句（拆句、并句或删句）`;
+  return `${ch.before} 句里有 <b>${ch.n} 句</b>和刚转写出来时不一样`;
+}
+function showChanged(ch, k){
+  openModal('导出前确认：这份稿子手工改过', `
+    <p>${changedText(ch)}。</p>
+    <p style="margin-top:12px">这些改动要带进导出的文件吗？</p>
+    <p class="thin" style="margin-top:10px">如果是误点的（比如不小心点了「并」「断」），
+      选<b>「用原始稿导出」</b>——稿子会还原成刚转写出来的样子，导出原始内容，两边都不留改动。</p>
+    <p style="text-align:right;margin-top:18px">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-ghost" style="flex:0 0 auto;margin-left:8px"
+              onclick="expRaw('${k}')">用原始稿导出</button>
+      <button class="btn btn-main" style="flex:0 0 auto;margin-left:8px;padding:0 16px"
+              onclick="expKeep('${k}')">带上改动</button>
+    </p>`);
+}
+async function expKeep(k){
+  closeModal();
+  await afterExportGate(k);
+}
+async function expRaw(k){
+  closeModal();
+  const r = await pywebview.api.revert_all(sel);
+  if (!r || !r.ok){ $('fstate').textContent = (r && r.msg) || '没退回去'; return; }
+  await select(sel);
+  $('fstate').textContent = '已还原成刚转写出来的样子 · 正在导出…';
+  await afterExportGate(k);
 }
 async function exportNow(k, a){
   const r = await pywebview.api.export(sel, k);
@@ -1589,15 +1661,47 @@ const HELP_HTML = `
   <li>点「开始转写」，等进度走完</li>
   <li>右侧看稿，点「导出」选格式</li>
 </ul>
-<h4>校对：边听边改</h4>
+<h4>改 · 断 · 并：先认情况，再动手</h4>
+<p>鼠标移到任意一句上，那句话的<b>右下角</b>会浮出四个小键：<b>讲1　改　断　并</b>。
+鼠标移开就收起来，不挡着读稿。点错了也不要紧，右上角都能退回来。</p>
+<ul>
+  <li><b>有个字听错了</b> → 点<b>「改」</b>，就在原地改，<b>回车</b>保存、<b>Esc</b> 不改</li>
+  <li><b>整句是「嗯」「啊」「（笑）」这类</b> → 点<b>「改」</b>，把字全删掉，回车 = 删掉这一句</li>
+  <li><b>一句话里其实是两个人在说</b>（抢话、接话被识别成了一句） → 点<b>「断」</b></li>
+  <li><b>一句话被切成了两半</b>（上一句以「，」收尾，下一句接着往下说） → 点<b>「并」</b></li>
+  <li><b>字没错，人错了</b> → 点最前面的<b>「讲1」</b>，<b>只改这一句</b>，同组别的句子一个不动</li>
+  <li><b>整组人的名字都不对</b>（一直是「说话人 2」，其实是嘉宾） → 点稿子左边的<b>「说话人 2」小标题</b>，整组改名</li>
+</ul>
+
+<h4>「断」怎么断：三步</h4>
+<ul>
+  <li><b>①</b> 点那句的<b>「断」</b>，整句摊在框里</li>
+  <li><b>②</b> 把光标放到<b>两个人分界的地方</b>——比如「…这样啊。那我说两句」的「那」前面。
+      下面立刻显示「前 12 字（00:05 → 00:08）　后 15 字（00:08 → 00:12）」，一眼看出切在哪</li>
+  <li><b>③</b> 顺手在「后半句是谁」里选个人（不选就跟前面同一个人），点<b>「切开」</b></li>
+</ul>
+<p class="thin">先切开、再点「讲1」换人，结果一样，只是多一步。切点离两头太近会被拦下——两边至少要留一个字。</p>
+
+<h4>「并」什么时候用</h4>
+<p>识别器把一口气的话断成两句时用：上一句以逗号收尾、下一句接得很顺，就像「前半句，」和「后半句。」这两行。</p>
+<p class="thin">两句不是同一个人时<b>按前一句算</b>，状态栏会写出来；觉得分错了按 <b>Ctrl+Z</b> 退回，再用「断」重新切。</p>
+
+<h4>断句的时间为什么差零点几秒</h4>
+<p>稿子里只有「这一句从 00:05 到 00:08」，<b>没有每个字的时间</b>，声纹也只在整句上有一份。
+所以切开时按<b>字数比例</b>分时间：前半占 40% 的字，就分 40% 的时长。</p>
+<p class="thin">字幕可能差零点几秒——但比整句归错人强。要精确到字，得重新转写并开逐字时间戳，本版不做。</p>
+
+<h4>改错了怎么回来</h4>
+<ul>
+  <li>点右上角<b>「↺ 撤销」</b>，或按 <b>Ctrl+Z</b>：一步一退，可以连退（最多 300 步）</li>
+  <li>改字、删句、换人、断句、并句、整组改名，都在<b>同一个撤销</b>里，混着改也能按顺序退</li>
+  <li><b>关掉程序就撤不回去了</b>（撤销记录只在内存里）——改坏了先别关窗口</li>
+  <li>已经关掉才发现改乱？导出时会先问你一句，选<b>「用原始稿导出」</b>，稿子还原成刚转写出来的样子</li>
+</ul>
+
+<h4>边听边改 · 搜索替换</h4>
 <ul>
   <li><b>双击任意一句</b>（或点左边的时码），从这句开始播原音，边听边改</li>
-  <li>鼠标移到句子上，右下角出现「讲1 改 断 并」→ 点「改」就地改字，<b>回车保存 / Esc 取消</b></li>
-  <li>那句是噪声、语气词？<b>把字清空</b>再回车 = 删掉这一句</li>
-  <li>一句里其实是两个人在说？点那句的<b>「断」</b>，光标放到分开的地方 → 切开，后半句还能顺手指定是谁</li>
-  <li>识别器把一句话切碎了？点<b>「并」</b>和下一句接起来</li>
-  <li>整句归错人？点句尾那个<b>说话人小标</b>，只改这一句</li>
-  <li>改错了按 <code>Ctrl+Z</code> 撤销，能一路退回去</li>
   <li>顶部搜索框输个错字，<b>回车跳下一处</b>，命中句会标出来</li>
   <li>同一个错字出现很多次：点搜索框右边的<b>「替」</b>，填上正确的词，「全部替换」一次改完；<b>Ctrl+Z 整批退回</b>。替换框留空 = 把这几个字删掉，删空了的句子会整句去掉</li>
   <li>点「导出」前会先扫一遍，只挑<b>根本没人说过的</b>东西：整句只剩标点、把「（音乐）（掌声）」写进正文、同一段被识别两遍（两句时间戳重叠才算）。<b>不想改也能照样导出</b>，一句问题都没有就不打扰你</li>
@@ -1606,6 +1710,7 @@ const HELP_HTML = `
       改完点<b>「导出 → 粘贴改好的稿子」</b>贴回来——按编号逐句落回，时间戳和说话人都留着。
       程序不联网，稿子出不出这台电脑由你定；编号弄丢的行会跳过，其余照常回填</li>
 </ul>
+
 <h4>人多的时候：把人数选上</h4>
 <ul>
   <li>左下角<b>「人数」</b>默认自动。自动分人最常见的毛病是「明明四五个人，只分出两个」，两层原因：

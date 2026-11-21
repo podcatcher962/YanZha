@@ -1,6 +1,6 @@
 # 言札 · YanZha
 
-**v0.7.0** · 2026-11-21
+**v0.7.1** · 2026-11-21
 
 把录音、播客、会议、视频，变成能直接用的文字稿。
 
@@ -54,6 +54,42 @@ Cantonese), speaker diarization, glossary, 8 export formats. Windows x64, MIT.*
 | **逐字时间戳** | 字幕能精确到每一句的起止，导入剪映、Premiere、B 站 |
 | **字幕自动折行** | srt / vtt 里一句太长会断成两行，剪映里不溢屏 |
 | **可中断** | 进度实时、还剩几分钟也一起算给你；随时能停；改「区分说话人」勾选不用重跑识别 |
+
+---
+
+## v0.7.1 改了什么（实测过的）
+
+两条用户反馈凑到一版：**「撤销需要做界面按键，使用者怎么会知道需要快捷键」**、
+**「修改过之后导出前要确认保存，很多人是无意改到的」**。
+
+**① 撤销有了按钮** — 稿子右上角「↺ 撤销」：改过才亮，灰着就是没得退，点一下退一步，
+`Ctrl+Z` 照样能用。改字 / 删句 / 换人 / 断句 / 并句 / 整组改名共用一个撤销栈，最多 300 步。
+
+**② 导出前问一句** — 手动改过再点导出，先问「这些改动要带进导出的文件吗」，
+并说清差在哪（「16 句里有 2 句和刚转写出来时不一样」）。
+选「用原始稿导出」，稿子直接还原成刚转写出来的样子，误点出来的改动一点不留。
+
+判断依据是**和原始稿逐句对比**，不数操作次数 —— 改了三处又全撤回去，导出时不会再问一遍。
+原始稿在转写完成时留快照，跟着草稿一起存，所以**关掉软件重开，仍然能「用原始稿导出」**。
+
+**③ 整组改名补进撤销** — 点小标题改名以前退不回来，是个漏网。
+
+**④ 长句不再被按钮压住** — 句子右侧留出按钮的位置，写满一整行的长句会提前折行。
+
+**⑤ 说明重写** — 「改断并」原来挤在一串条目里，现在按「先认情况、再动手」讲：
+一张对照表（哪种情况点哪个键）、断句三步、并句什么时候用、断出来的时间为什么差零点几秒、
+改错了怎么回来。软件里的「使用说明」和随包的 `README-使用说明.md` 两边都改了。
+
+**本版实测**：
+
+| 项目 | 结果 |
+|---|---|
+| 逻辑单测（本机脚本 `tools/test_yanzha_v071.py`，不入仓库） | **51 项全过**：按钮状态、可撤步数、撤销文案、整组改名可撤、按文件分开计数、改动判断、还原、草稿带原始稿 |
+| 界面冒烟（本机脚本 `_video/test_ui_v071.py`，真实 84 秒双人对话） | **22 项全过**：按钮灰→亮→点掉、状态栏文案、导出确认弹窗、「用原始稿导出」、最长句文字不被按钮压住 |
+| 旧三套回归 | **244 项全过**（125 + 47 + 72），改字 / 替换 / 术语 / 草稿 / 导出都没受影响 |
+
+**一个要说清的取舍**：撤销记录只在内存里，**关掉软件就清空** —— 所以「导出前问一句」是第二道保险，
+不是唯一一道。真改乱了、又已经关过软件，导出时选「用原始稿导出」还能救回来。
 
 ---
 
@@ -497,6 +533,44 @@ no GPU required.
 | **Word-level timestamps** | Subtitles precise enough for Premiere / Final Cut / Bilibili |
 | **Resumable** | Live progress with an estimated time remaining, stop anytime; toggling diarization does not re-run recognition |
 
+### v0.7.1 — what changed (measured)
+
+Two pieces of user feedback landed in the same release: **"undo needs a button — how is
+anyone supposed to know the shortcut"** and **"before exporting, ask me whether to keep the
+edits; a lot of them are accidental"**.
+
+**① An Undo button.** Top right of the transcript: it lights up once you have changed
+something and stays grey otherwise, and it names what it is about to undo. `Ctrl+Z` still works.
+Text edits, deletions, speaker reassignment, splits, merges and whole-group renames share one
+undo stack (up to 300 steps).
+
+**② A question before export.** Export after editing and it asks whether the edits should go
+into the file, plus what changed ("2 of 16 lines differ from the transcription").
+Choosing "Export the original" restores the transcript exactly as it was recognized.
+
+The test is a **line-by-line comparison with the original**, not a count of operations —
+edit three places, undo all three, and export stops asking. The original is snapshotted when
+transcription finishes and saved with the draft, so **it still works after closing the app**.
+
+**③ Group renames are undoable now** — renaming a whole speaker used to be a one-way door.
+
+**④ Long lines are no longer covered by the buttons** — the right edge reserves room for them,
+so a full line wraps earlier instead of running underneath.
+
+**⑤ The docs were rewritten** — "edit / split / merge" used to sit in a flat bullet list; it is
+now organized as "recognize the case, then act": a lookup table, the three steps of a split,
+when to merge, why split timestamps drift by a fraction of a second, and how to get back after
+a mistake. Both the in-app help and the bundled `README-使用说明.md` were updated.
+
+**Measured this release:** 51 logic assertions (local script, not shipped), 22 UI assertions
+driven through the real window with an 84-second two-speaker recording, and the three older
+suites (244 assertions) still green.
+
+**One trade-off, stated plainly:** the undo stack lives in memory and is cleared when the app
+closes — which is exactly why the export-time question exists as a second safety net.
+
+---
+
 ### v0.7.0 — what changed (measured)
 
 From a user transcribing interviews: **the speaker is wrong and there is no way to fix
@@ -752,4 +826,4 @@ compliance table and [`licenses/`](licenses/) for the full text.
 **© 永远的兰兰 · Lanlan Eternal**
 
 仓库 / Repository：https://github.com/podcatcher962/YanZha
-版本 / Version：v0.7.0 · 2026-11-21
+版本 / Version：v0.7.1 · 2026-11-21

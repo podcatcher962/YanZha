@@ -50,7 +50,7 @@ def _init_log():
 
 
 APP_TITLE = '言札'
-VERSION = '0.7.0'
+VERSION = '0.7.1'
 
 
 _init_log()
@@ -545,6 +545,10 @@ class Api:
                 it['duration'] = res['duration']
                 if not res.get('canceled') and res['sentences']:
                     it['raw'] = [(s.start, s.end, s.text) for s in res['sentences']]
+                    # 原始稿快照：导出前那句「要带上手动改动吗」，靠它才退得回去。
+                    # raw 会被改字同步（重跑分人要保留改过的字），所以不能拿 raw 当原件。
+                    it['pristine'] = [[s.start, s.end, s.text, s.speaker]
+                                      for s in res['sentences']]
                     it['sig'] = self._sig()
                     it['lang'] = self._engine.lang_pref
                 if res.get('canceled'):
@@ -622,7 +626,11 @@ class Api:
                 'speakers': len({s.speaker for s in it['sentences'] if s.speaker}),
                 'sentences': [{'start': s.start, 'end': s.end, 'text': s.text,
                                'speaker': s.speaker}
-                              for s in it['sentences']]}
+                              for s in it['sentences']],
+                # 界面上「撤销」按钮的可用状态：0 就置灰，别让人点了没反应
+                'undo_left': self._undo_left(idx),
+                # 导出前那句确认：和刚转写出来比，到底改了没有
+                'changed': self._changed_info(it)}
 
     @_logged
     def rename_speaker(self, idx, old, new):
@@ -633,15 +641,22 @@ class Api:
         new = str(new).strip()[:24]
         if not new or new == old:
             return {'ok': False, 'msg': '名字没变'}
-        n = 0
-        for s in self._items[idx]['sentences']:
-            if str(s.speaker).strip() == old:
-                s.speaker = new
-                n += 1
-        log.info('改说话人名 %s → %s，%d 句', old, new, n)
-        if n:
-            self._touch(idx)
-        return {'ok': True, 'n': n}
+        sents = self._items[idx]['sentences']
+        hits = [(si, str(s.speaker)) for si, s in enumerate(sents)
+                if str(s.speaker).strip() == old]
+        if not hits:
+            return {'ok': False, 'msg': '没有这个名字'}
+        # 整组改名一次算一步：几十句一起改，撤回也要一次回来
+        head = sents[hits[0][0]]
+        self._push_undo({'kind': 'rename', 'idx': idx, 'si': hits[0][0],
+                         'deleted': False, 'spk_batch': hits,
+                         'sent': C.Sentence(head.start, head.end, head.text, old),
+                         'raw_i': -1, 'raw_row': None})
+        for si, _old_spk in hits:
+            sents[si].speaker = new
+        log.info('改说话人名 %s → %s，%d 句', old, new, len(hits))
+        self._touch(idx)
+        return {'ok': True, 'n': len(hits)}
 
     # ---------------- 校对：听原音 · 改错字
     @_logged
@@ -747,7 +762,7 @@ class Api:
             return {'ok': True, 'changed': False, 'speaker': old, 'speakers': n_spk}
         rows = it.get('raw') or []
         ri = self._raw_index(it, s)
-        self._push_undo({'idx': idx, 'si': si, 'deleted': False,
+        self._push_undo({'kind': 'spk', 'idx': idx, 'si': si, 'deleted': False,
                          'sent': C.Sentence(s.start, s.end, s.text, s.speaker),
                          'raw_i': ri,
                          'raw_row': rows[ri] if 0 <= ri < len(rows) else None})
@@ -853,6 +868,11 @@ class Api:
         si = u['si']
         row = u.get('raw_row')
         kind = u.get('kind')
+        if u.get('spk_batch'):                # 整组改名：逐句把说话人写回去
+            for si_, spk_ in u['spk_batch']:
+                if 0 <= si_ < len(sents):
+                    sents[si_].speaker = spk_
+            return
         if kind == 'split':
             if 0 <= si + 1 < len(sents):       # 后一句去掉
                 sents.pop(si + 1)
@@ -1206,6 +1226,8 @@ class Api:
             'exported': bool(exported),
             'sentences': [[s.start, s.end, s.text, s.speaker]
                           for s in it['sentences']],
+            # 原始稿一起存：下次打开点导出，仍然能选「用原始稿导出」
+            'pristine': [list(r) for r in (it.get('pristine') or [])],
         }
         fp = draft_file(key)
         tmp = fp + '.tmp'
@@ -1282,6 +1304,13 @@ class Api:
                                     str(row[3]) if len(row) > 3 else ''))
         if not sents:
             return {'ok': False, 'msg': '这份草稿是空的'}
+        pris = []
+        for row in d.get('pristine') or []:
+            if isinstance(row, (list, tuple)) and len(row) >= 3:
+                pris.append([float(row[0]), float(row[1]), str(row[2]),
+                             str(row[3]) if len(row) > 3 else ''])
+        if not pris:          # 老草稿没有这个字段：只能把当前样子当原始稿
+            pris = [[s.start, s.end, s.text, s.speaker] for s in sents]
         self._items.append({
             'path': path, 'name': name, 'size': 0,
             'duration': float(d.get('duration') or 0),
@@ -1289,6 +1318,7 @@ class Api:
             'msg': '%d 句 · 上次没导出的稿子' % len(sents),
             'sentences': sents, 'error': '',
             'raw': [(s.start, s.end, s.text) for s in sents],
+            'pristine': pris,
             'last_spk': None,
         })
         log.info('恢复草稿 %s：%d 句', name, len(sents))
@@ -1323,6 +1353,54 @@ class Api:
                           for k, si, t, h in rows[:12]]}
 
     @_logged
+    def _changed_info(self, it):
+        """和「刚转写出来的样子」比，改过没有、改了多少。
+
+        按实际差异算，不数操作次数：改了三处又全撤回去，就不该再拦着问一遍。
+        """
+        pris = it.get('pristine') or []
+        ss = it.get('sentences') or []
+        if not pris:
+            return {'changed': False, 'n': 0, 'structural': False,
+                    'before': len(ss), 'after': len(ss)}
+        if len(pris) != len(ss):
+            return {'changed': True, 'n': abs(len(ss) - len(pris)),
+                    'structural': True, 'before': len(pris), 'after': len(ss)}
+        n = 0
+        for p, s in zip(pris, ss):
+            if len(p) >= 3 and (str(p[2]) != s.text
+                                or (len(p) > 3 and str(p[3]) != (s.speaker or ''))):
+                n += 1
+        return {'changed': n > 0, 'n': n, 'structural': False,
+                'before': len(pris), 'after': len(ss)}
+
+    @_logged
+    def revert_all(self, idx):
+        """把手动改动全丢掉，回到刚转写出来的样子（导出前那个「用原始稿」）。"""
+        if not (0 <= idx < len(self._items)):
+            return {'ok': False, 'msg': '没有内容'}
+        it = self._items[idx]
+        pris = it.get('pristine') or []
+        if not pris:
+            return {'ok': False, 'msg': '这份稿子没留原始记录，退不回去'}
+        before = len(it['sentences'])
+        it['sentences'] = [C.Sentence(float(r[0]), float(r[1]), str(r[2]),
+                                      str(r[3]) if len(r) > 3 else '')
+                           for r in pris]
+        it['raw'] = [(s.start, s.end, s.text) for s in it['sentences']]
+        # 撤销记录指向的是旧句子的位置，留着只会错位，一起清掉
+        self._undo = [u for u in self._undo if u.get('idx') != idx]
+        self._touch(idx)
+        log.info('放弃手动改动：%d 句 → 原始 %d 句', before, len(it['sentences']))
+        return {'ok': True, 'n': len(it['sentences']), 'before': before,
+                'msg': '已还原成刚转写出来的样子'}
+
+    def _undo_left(self, idx=None):
+        """当前文件还能撤几步 —— 给界面上的「撤销」按钮定灰不灰。"""
+        if idx is None:
+            return len(self._undo)
+        return sum(1 for u in self._undo if u.get('idx') == idx)
+
     def undo_text(self, idx=None):
         """撤销上一次改字/删句；上一次若是「全部替换」，整批一起退回。"""
         while self._undo:
@@ -1339,16 +1417,24 @@ class Api:
                         self._restore(e)
                 log.info('撤销整批 %d 句', len(items))
                 self._touch(u['idx'])
-                return {'ok': True, 'batch': True, 'n': len(items)}
+                return {'ok': True, 'batch': True, 'n': len(items), 'what': '替换',
+                        'left': self._undo_left(idx if idx is not None else u['idx'])}
             if u['idx'] >= len(self._items):
                 continue
+            kind = u.get('kind') or ''
+            what = {'split': '拆句', 'merge': '并句', 'spk': '换人',
+                    'rename': '改名'}.get(kind)
+            if not what:
+                what = '删句' if u.get('deleted') else '改字'
             self._restore(u)
-            log.info('撤销 [%d:%d] → %r', u['idx'], u['si'], u['sent'].text[:30])
+            log.info('撤销%s [%d:%d] → %r', what, u['idx'], u['si'], u['sent'].text[:30])
             self._touch(u['idx'])
             return {'ok': True, 'idx': u['idx'], 'si': u['si'],
                     'text': u['sent'].text, 'deleted': u.get('deleted', False),
-                    'kind': u.get('kind') or ''}
-        return {'ok': False, 'msg': '没有可撤销的'}
+                    'kind': kind, 'what': what,
+                    'left': self._undo_left(idx if idx is not None else u['idx'])}
+        return {'ok': False, 'msg': '没有可撤销的',
+                'left': self._undo_left(idx) if idx is not None else 0}
 
     @_logged
     def apply_proof(self, idx, text):
